@@ -12,10 +12,10 @@ kbdgetc(void)
   };
   uint st, data, c;
 
-  st = inb(KBSTATP);
-  if((st & KBS_DIB) == 0)
+  st = inb(KBSTATP); // Get status data by x86i (port 0x64)
+  if((st & KBS_DIB) == 0) // Checck if status bit is set (==1)
     return -1;
-  data = inb(KBDATAP);
+  data = inb(KBDATAP); // Get reading data by x86i (port 0x60)
 
   if(data == 0xE0){
     shift |= E0ESC;
