@@ -2,7 +2,6 @@
 #include "x86.h"
 #include "defs.h"
 #include "traps.h"
-#include "spinlock.h"
 
 #define PSTAT (0x64)
 #define PDATA (0x60)
@@ -22,6 +21,7 @@
 static struct spinlock mouse_lock;
 static int read=0, write=0, size=0;
 static uint circlebuf[BUFLEN];
+static struct sleeplock readsleep;
 
 static void write_buffer(uint data){
   if(size<129){
@@ -113,7 +113,8 @@ void mouseinit(void)
   outb(PDATA, 0xF4);  // Enable Packet Streaming
   wait_ack();
 
-  initlock(&mouse_lock, "mouse");
+  initlock(&mouse_lock, "mouse"); //lock mouse writing
+  initsleeplock(&readsleep, "read buf");
   ioapicenable(IRQ_MOUSE, 0);
 }
 
@@ -143,6 +144,7 @@ void mouseintr(void){
     st = inb(PSTAT);
   }
   release(&mouse_lock);
+  releasesleep(&readsleep);
 }
 
 int sys_readmouse(void){
@@ -154,6 +156,9 @@ int sys_readmouse(void){
 int readmouse(char* pkt){
   if(argptr(0, &pkt, 3)==-1){
     return -1;
+  }
+  while(size<3){
+    acquiresleep(&readsleep);
   }
   for(int i=0; i=3; i++){
     pkt[i]=read_buffer();
