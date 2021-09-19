@@ -143,3 +143,8 @@ void mouseintr(void){
   }
   release(&mouse_lock);
 }
+
+int readmouse(char *pkt){
+  // argptr(&pkt);
+  read_buffer();
+}
