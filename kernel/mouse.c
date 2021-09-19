@@ -29,6 +29,7 @@ static void write_buffer(uint data){
       write+=1%BUFLEN;
       size++;
     }
+  cprintf("buffer full\n");
 }
 
 static int read_buffer(){
@@ -39,6 +40,7 @@ static int read_buffer(){
     size--;
     return out;
   }
+  cprintf("buffer empty\n");
   return -1;
 }
 
