@@ -21,7 +21,26 @@
 
 static struct spinlock mouse_lock;
 static int read=0, write=0, size=0;
-static char circlebuf[BUFLEN];
+static uint circlebuf[BUFLEN];
+
+static void write_buffer(uint data){
+  if(size<129){
+      circlebuf[write]=data;
+      write+=1%BUFLEN;
+      size++;
+    }
+}
+
+static int read_buffer(){
+  // Under assumption that we will never reach datavalue > MAX(int)
+  if(size>0){
+    int out=circlebuf[read];
+    read+=1%BUFLEN;
+    size--;
+    return out;
+  }
+  return -1;
+}
 
 static void wait_read()
 {
@@ -112,10 +131,7 @@ void mouseintr(void){
     if (st & 0x20) {  // bit 5 is set ==> mouse
       cprintf("mouse event - %d\n", data_buf);
       // put mouse data in buffer
-      if((write!=read) || size==0){
-        circlebuf[write]=data_buf;
-        write+=1%BUFLEN;
-      }
+      write_buffer(data_buf);
       data_buf = 0;
     }
     // else {  // bit 5 is clear ==> keyboard
