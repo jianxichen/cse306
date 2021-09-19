@@ -16,8 +16,12 @@
 #define IS_SET(stat, bit) ((stat) & (bit))
 #define IS_CLEAR(stat, bit) (!((stat) & (bit)))
 
+#define BUFLEN 129
+
 
 static struct spinlock mouse_lock;
+static int read=0, write=0, size=0;
+static char circlebuf[BUFLEN];
 
 static void wait_read()
 {
@@ -107,6 +111,11 @@ void mouseintr(void){
     cprintf("st = %d  ", st);
     if (st & 0x20) {  // bit 5 is set ==> mouse
       cprintf("mouse event - %d\n", data_buf);
+      // put mouse data in buffer
+      if((write!=read) || size==0){
+        circlebuf[write]=data_buf;
+        write+=1%BUFLEN;
+      }
       data_buf = 0;
     }
     // else {  // bit 5 is clear ==> keyboard
