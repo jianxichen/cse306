@@ -58,7 +58,7 @@ kbdintr(void)
     data_buf = inb(KBDATAP);
     // cprintf("st = %d  ", st);  // st = 29 = 0x1D = 0001 1101
     if(st & 0x20){  // bit 5 is set ==> mouse
-      cprintf("mouse event\n");
+      // cprintf("mouse event\n");
       data_buf = 0;
     } else {  // bit 5 is clear ==> keyboard
       cprintf("keyboard event\n");

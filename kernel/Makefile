@@ -30,7 +30,6 @@ OBJS = \
 	uart.o\
 	vectors.o\
 	vm.o\
-	mouse.o\
 	helper.o
 
 kernel: $(OBJS) entry.o entryother initcode kernel.ld

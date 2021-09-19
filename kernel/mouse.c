@@ -109,9 +109,9 @@ void mouseintr(void){
       cprintf("mouse event - %d\n", data_buf);
       data_buf = 0;
     }
-    else {  // bit 5 is clear ==> keyboard
-      cprintf("keyboard event\n");
-    }
+    // else {  // bit 5 is clear ==> keyboard
+    //   cprintf("keyboard event\n");
+    // }
     st = inb(PSTAT);
   }
   release(&mouse_lock);
