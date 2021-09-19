@@ -72,6 +72,10 @@ void            kinit2(void*, void*);
 // kbd.c
 void            kbdintr(void);
 
+// mouse.c
+void            mouseinit(void);
+void            mouseintr(void);
+
 // lapic.c
 void            cmostime(struct rtcdate *r);
 int             lapicid(void);
