@@ -61,7 +61,7 @@ kbdintr(void)
       // cprintf("mouse event\n");
       data_buf = 0;
     } else {  // bit 5 is clear ==> keyboard
-      cprintf("keyboard event\n");
+      // cprintf("keyboard event\n");
     }
     st = inb(KBSTATP);
   }

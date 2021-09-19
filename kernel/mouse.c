@@ -28,8 +28,9 @@ static void write_buffer(uint data){
       circlebuf[write]=data;
       write+=1%BUFLEN;
       size++;
+    } else {
+      cprintf("buffer is full\n");
     }
-  cprintf("buffer full\n");
 }
 
 static int read_buffer(){
@@ -90,11 +91,11 @@ void mouseinit(void)
   outb(PSTAT, 0x20); // send the command byte 0x20 ("Get Compaq Status Byte") to the PS/2 controler on port 0x64
   wait_read();
   uint st = inb(PDATA); // returned status byte
-  cprintf("returned status byte = %d\n", st);
+  // cprintf("returned status byte = %d\n", st);
 
   st |= BIT1;    // Set Bit 1 (value = 2, "enable mouse interrupts")
   st &= ~(BIT5); // Clear Bit 5 (value = 0, "disable mouse clock")
-  cprintf("new status byte = %d\n", st);
+  // cprintf("new status byte = %d\n", st);
 
   wait_write();
   outb(PSTAT, 0x60); // "Set Compaq Status"
@@ -117,7 +118,7 @@ void mouseinit(void)
 }
 
 void mouseintr(void){
-  cprintf("Here is - mouse intr\n");
+  // cprintf("Here is - mouse intr\n");
 
   acquire(&mouse_lock);
 
@@ -144,4 +145,18 @@ void mouseintr(void){
   release(&mouse_lock);
 }
 
-int retrieve_mouse();
+int sys_readmouse(void){
+  char mousefeed[3];
+  // argptr(0, &mousefeed, 3);
+  return readmouse(mousefeed);
+}
+
+int readmouse(char* pkt){
+  if(argptr(0, &pkt, 3)==-1){
+    return -1;
+  }
+  for(int i=0; i=3; i++){
+    pkt[i]=read_buffer();
+  }
+  return 0;
+}

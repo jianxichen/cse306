@@ -595,7 +595,3 @@ procdump(void)
     cprintf("\n");
   }
 }
-
-int readmouse(char* pkt){
-  
-}
