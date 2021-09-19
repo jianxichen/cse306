@@ -75,7 +75,6 @@ void            kbdintr(void);
 // mouse.c
 void            mouseinit(void);
 void            mouseintr(void);
-int             readmouse(char *pkt);
 
 // lapic.c
 void            cmostime(struct rtcdate *r);
@@ -125,6 +124,7 @@ void            userinit(void);
 int             wait(void);
 void            wakeup(void*);
 void            yield(void);
+int             readmouse(char *pkt);
 
 // swtch.S
 void            swtch(struct context**, struct context*);
