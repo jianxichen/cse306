@@ -29,7 +29,9 @@ OBJS = \
 	trap.o\
 	uart.o\
 	vectors.o\
-	vm.o
+	vm.o\
+	mouse.o\
+	helper.o
 
 kernel: $(OBJS) entry.o entryother initcode kernel.ld
 	$(LD) $(LDFLAGS) -T kernel.ld -o kernel entry.o $(OBJS) -b binary initcode entryother
