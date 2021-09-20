@@ -2,6 +2,8 @@
 #include "x86.h"
 #include "defs.h"
 #include "traps.h"
+#include "spinlock.h"
+#include "sleeplock.h"
 
 #define PSTAT (0x64)
 #define PDATA (0x60)
@@ -160,7 +162,7 @@ int readmouse(char* pkt){
   while(size<3){
     acquiresleep(&readsleep);
   }
-  for(int i=0; i=3; i++){
+  for(int i=0; i<3; i++){ // ??
     pkt[i]=read_buffer();
   }
   return 0;
