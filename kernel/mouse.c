@@ -1,15 +1,11 @@
-#include "types.h"
-#include "x86.h"
-#include "defs.h"
-#include "traps.h"
-#include "spinlock.h"
-#include "sleeplock.h"
+#include "mouse.h"
 
 #define PSTAT (0x64)
 #define PDATA (0x60)
 
 #define BIT0 (0x01)
 #define BIT1 (0x02)
+#define BIT3 (0x08)
 #define BIT5 (0x20)
 
 #define ACK (0xFA)
@@ -121,30 +117,48 @@ void mouseinit(void)
 }
 
 void mouseintr(void){
-  // cprintf("Here is - mouse intr\n");
 
   acquire(&mouse_lock);
 
-  uint st = inb(PSTAT);
-  uint data_buf;
-  if ((st & BIT0) == 0) { // before reading data from 0x60, verify that bit 0 (value = 0x1) is set.
-    release(&mouse_lock);
-    return;
+  if ((inb(PSTAT) & BIT0) == 0) { // before reading data from 0x60, verify that bit 0 (value = 0x1) is set.
+    goto end;
   }
-  while (st & BIT0) {
-    data_buf = inb(PDATA);
-    cprintf("st = %d  ", st);
-    if (st & 0x20) {  // bit 5 is set ==> mouse
-      cprintf("mouse event - %d\n", data_buf);
-      // put mouse data in buffer
-      write_buffer(data_buf);
-      data_buf = 0;
-    }
-    // else {  // bit 5 is clear ==> keyboard
-    //   cprintf("keyboard event\n");
-    // }
-    st = inb(PSTAT);
+
+  mpkt_t pkt;
+  wait_read();
+  pkt.flags = inb(PDATA);
+  wait_read();
+  pkt.x_movement = inb(PDATA);
+  wait_read();
+  pkt.y_movement = inb(PDATA);
+  cprintf("%x %x %x\n", pkt.flags, pkt.x_movement, pkt.y_movement);
+  mflags_t* f = (mflags_t*)&pkt.flags;
+  cprintf("%d%d %d%d %d %d%d%d -- %d %d\n", f->y_overflow, f->x_overflow, f->y_sign, f->x_sign, f->always1, f->middle_btn, f->right_btn, f->left_btn, pkt.x_movement, pkt.y_movement);
+  if (f->y_overflow || f->x_overflow) {
+    cprintf("ERROR: Y or X overflow bits are set.\n");
+    goto discard;
   }
+  if (!f->always1) {
+    cprintf("ERROR: bit 3 is not 1\n");
+    goto discard;
+  }
+  if (f->left_btn) cprintf("Left clicked, ");
+  if (f->middle_btn) cprintf("Middle clicked, ");
+  if (f->right_btn) cprintf("Right clicked, ");
+  if (pkt.x_movement || pkt.y_movement) {
+    int x = f->x_sign ? (0xFFFFFF00 | pkt.x_movement) : (pkt.x_movement);
+    int y = f->y_sign ? (0xFFFFFF00 | pkt.y_movement) : (pkt.y_movement);
+    cprintf("Move (%d, %d)", x, y);
+  }
+  write_buffer(0); // not used, just making code compilable
+
+discard:
+  while (inb(PSTAT) & BIT0) {
+    inb(PDATA); // discard bytes
+  }
+  cprintf("\n-----------\n");
+
+end:
   release(&mouse_lock);
   releasesleep(&readsleep);
 }
