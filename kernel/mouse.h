@@ -2,11 +2,6 @@
 #define MOUSE_H
 
 #include "types.h"
-#include "x86.h"
-#include "defs.h"
-#include "traps.h"
-#include "spinlock.h"
-#include "sleeplock.h"
 
 typedef struct {
 /*
