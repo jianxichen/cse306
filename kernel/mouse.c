@@ -29,7 +29,7 @@ static struct sleeplock readsleep;
 static void write_buffer(uint data){
   if(size<129){
       circlebuf[write]=data;
-      write+=1%BUFLEN;
+      write = (write+1)%BUFLEN;
       size++;
     } else {
       cprintf("buffer is full\n");
@@ -40,7 +40,7 @@ static int read_buffer(){
   // Under assumption that we will never reach datavalue > MAX(int)
   if(size>0){
     int out=circlebuf[read];
-    read+=1%BUFLEN;
+    read=(read+1)%BUFLEN;
     size--;
     return out;
   }
