@@ -146,7 +146,9 @@ void mouseintr(void){
     goto discard;
   }
 
-  write_buffer(0); // not used, just making code compilable
+  write_buffer(pkt.flags);
+  write_buffer(pkt.x_movement);
+  write_buffer(pkt.y_movement);
 
 discard:
   while (inb(PSTAT) & BIT0) {
@@ -171,7 +173,7 @@ int readmouse(char* pkt){
   while(size<3){
     acquiresleep(&readsleep);
   }
-  for(int i=0; i<3; i++){ // ??
+  for(int i=0; i<3; i++){
     pkt[i]=read_buffer();
   }
   return 0;
