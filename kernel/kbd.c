@@ -3,6 +3,13 @@
 #include "defs.h"
 #include "kbd.h"
 
+static int PSTAT = (0x64); // REMOVE THESE ONCES WAIT_READ GETS TOO MUCH
+static int PDATA = (0x60); // REMOVE THESE ONCES WAIT_READ GETS TOO MUCH
+static int BIT0 = (0x01); // REMOVE THESE ONCES WAIT_READ GETS TOO MUCH
+static int BIT1 = (0x02); // REMOVE THESE ONCES WAIT_READ GETS TOO MUCH
+static int BIT3 = (0x08); // REMOVE THESE ONCES WAIT_READ GETS TOO MUCH
+static int BIT5 = (0x20); // REMOVE THESE ONCES WAIT_READ GETS TOO MUCH
+
 volatile uint data_buf = 0;  // May be a char array??? Now it seems working, somehow.
 
 int
@@ -47,9 +54,40 @@ kbdgetc(void)
   return c;
 }
 
+// REMOVE THESE ONCES WAIT_READ GETS TOO MUCH
+static void wait_read()
+{
+  uint timeout = 10000;
+  uchar status = 0;
+  while (--timeout) {
+    status = inb(PSTAT);
+    if (IS_SET(status, BIT0)) {
+      // cprintf("Readable\n");
+      return;
+    }
+  }
+  cprintf("wait for reading - timeout\n");
+} 
+
+// REMOVE THESE ONCES WAIT_READ GETS TOO MUCH
+static void wait_write()
+{
+  uint timeout = 10000;
+  uchar status = 0;
+  while (--timeout) {
+    status = inb(PSTAT);
+    if (IS_CLEAR(status, BIT1)) {
+      // cprintf("Writable\n");
+      return;
+    }
+  }
+  cprintf("wait for writing - timeout\n");
+}
+
 void
 kbdintr(void)
 {
+  wait_read();
   uint st = inb(KBSTATP);
 
   if((st & KBS_DIB) == 0)  // before reading data from 0x60, verify that bit 0 (value = 0x1) is set.
@@ -62,7 +100,9 @@ kbdintr(void)
       data_buf = 0;
     } else {  // bit 5 is clear ==> keyboard
       // cprintf("keyboard event\n");
+      break;
     }
+    wait_read();
     st = inb(KBSTATP);
   }
 
