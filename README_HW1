@@ -29,5 +29,5 @@ there is a function pointer array located in syscall.c. All in all, the function
 the sys_readmouse() function, in which we decided will be kept in kernel/mouse.c. There, the function returns a readmouse(char*) that's
 implemented inside kernel/mouse.c as well. All it's doing is have sys_readmouse() pass in a char array, in which, will filled in by 
 the kernel's readmouse(), which reads from the buffer with sleeplock if there is not enough data in buffer, and then readmouse() returns
-its success with 0 and failure with -1. In the user program, we pass into the readmouse() as a structure because memory-wise, it is
+its success with 0 and failure with -1. Finally, in the user program, we pass into the readmouse() as a structure because memory-wise, it is
 the same data structure and both are 3 bytes long, therefore they are complimentary and will not produce negative sideeffects.
