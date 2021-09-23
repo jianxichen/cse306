@@ -18,11 +18,16 @@ uartinit() function because that deals serial ports and we need to initialize se
 For our mouseintr(), we decided to create a mouse packet structure dedicated to the mouse packet for easier data extract 
 simplicity for Exercise 3, where we will need to spit out data about changes and events happening in the mouse via a user
 program. Within the mouseintr(), all we do is collect data from the ports (with inclusion of the waits), create a mouse_packet
-instance, and put the data from the port into that structure instance, then add it into our circular buffer.
+instance, and put the data from the port into that structure instance, then add it into our circular buffer. 
 
 To implement the system call of readmouse(char*), we accessed the files of kernel/syscall.c, kernel/syscall.h, user/usys.S,
 kernel/defs.h, and user/user.h. Following suit with existing systemcalls, we will put the readmouse(char*) into our kernel/mouse.c
 file because it pertains to the mouse. From this system call, we see that when a user program will know of readmouse(char*) from
 the prototype declaration user/user.h, then because of usys.S, that function will get mapped to a systemcall number, which we had
 defined in kernel/syscall.h. There, it will proceed to go to the syscall() located kernel/syscall.c to actually run the function as
-there is a function pointer array located in 
+there is a function pointer array located in syscall.c. All in all, the function that will call to actually use readmouse(char*) is 
+the sys_readmouse() function, in which we decided will be kept in kernel/mouse.c. There, the function returns a readmouse(char*) that's
+implemented inside kernel/mouse.c as well. All it's doing is have sys_readmouse() pass in a char array, in which, will filled in by 
+the kernel's readmouse(), which reads from the buffer with sleeplock if there is not enough data in buffer, and then readmouse() returns
+its success with 0 and failure with -1. In the user program, we pass into the readmouse() as a structure because memory-wise, it is
+the same data structure and both are 3 bytes long, therefore they are complimentary and will not produce negative sideeffects.
