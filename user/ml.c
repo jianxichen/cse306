@@ -5,7 +5,7 @@
 #include "kernel/mouse.h"
 #include "user.h"
 
-#define STDIN (0)
+#define STDIN  (0)
 #define STDOUT (1)
 #define STDERR (2)
 
@@ -16,12 +16,12 @@ int main(int argc, char const *argv[])
   printf(STDOUT, "Hello Mouse!\n");
   while (1)
   {
-    if (readmouse((char *)&pkt) == -1)
+    if (readmouse((char *)&pkt) == -1)  // System call
     {
       printf(STDOUT, "ERROR\n");
       return -1;
     }
-    printf(STDERR, "%x %x %x = ", pkt.flags, pkt.x_movement, pkt.y_movement);
+    printf(STDOUT, "%x %x %x = ", pkt.flags, pkt.x_movement, pkt.y_movement);
     printf(STDOUT, "%d%d %d%d %d %d%d%d -- %d %d ==> ", f->y_overflow, f->x_overflow, f->y_sign, f->x_sign, f->always1, f->middle_btn, f->right_btn, f->left_btn, pkt.x_movement, pkt.y_movement);
     if (f->left_btn)
       printf(STDOUT, "Left clicked, ");

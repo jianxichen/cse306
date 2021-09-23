@@ -75,7 +75,6 @@ void            kbdintr(void);
 // mouse.c
 void            mouseinit(void);
 void            mouseintr(void);
-int             readmouse(char *pkt);
 
 // lapic.c
 void            cmostime(struct rtcdate *r);

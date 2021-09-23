@@ -38,3 +38,35 @@ running the program, you will receive a sudden amount of outputs because everyti
 Any overflow of mouse events mouse (only 129 packets are kept, we made our buffer size small) will be deleted/ignored as stated by
 the homework. By launching user program "ml", it will finally read and remove the mouse packet entries from the buffer. Then it will be 
 kept in a sleep state by the sleeplock until there is a mouse interrupt that wakes it up.
+
+Assumptions:
+
+1. We assumed that the 3-byte packet is continiously sent by PS/2 controller.
+
+How to build and run:
+
+```sh
+make CPUS=1 qemu
+```
+
+After xv6 booting up on qemu, type "ls" command and will see a "ml" user program shown on the list.
+Type "ml" to run the program.
+
+Printout Example of demo program "ml":
+
+ |----------------------------------------------- 1st Byte (Hex)
+ |  |-------------------------------------------- 2nd Byte (Hex)
+ |  | |------------------------------------------ 3rd Byte (Hex)
+ |  | |   |-------------------------------------- Y overflow
+ |  | |   ||------------------------------------- X overflow
+ |  | |   || |----------------------------------- Y sign Bit
+ |  | |   || ||---------------------------------- X sign Bit
+ |  | |   || || |-------------------------------- Always 1 Bit
+ |  | |   || || | |------------------------------ Middle Button
+ |  | |   || || | ||----------------------------- Right Button
+ |  | |   || || | |||---------------------------- Left Button
+ |  | |   || || | |||     |---------------------- Delta X (2's)
+ |  | |   || || | |||     |  |------------------- Delta Y (2's)
+ |  | |   || || | |||     |  |     |------------- Mouse Action
+ 9  0 0 = 00 00 1 001 --  0  0 ==> Left clicked
+18 F0 9 = 00 01 1 000 -- 240 9 ==> Move (-6, 9)

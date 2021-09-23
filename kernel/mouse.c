@@ -166,16 +166,7 @@ end:
   releasesleep(&readsleep);
 }
 
-int sys_readmouse(void){
-  char mousefeed[3];
-  // argptr(0, &mousefeed, 3);
-  return readmouse(mousefeed);
-}
-
-int readmouse(char* pkt){
-  if(argptr(0, &pkt, 3)==-1){
-    return -1;
-  }
+static int readmouse(char* pkt){
   while(size<3){
     acquiresleep(&readsleep);
   }
@@ -183,4 +174,12 @@ int readmouse(char* pkt){
     pkt[i]=read_buffer();
   }
   return 0;
+}
+
+int sys_readmouse(void){
+  char *pkt;
+  if(argptr(0, &pkt, 3)==-1){
+    return -1;
+  }
+  return readmouse(pkt);
 }
