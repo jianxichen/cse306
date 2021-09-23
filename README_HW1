@@ -18,7 +18,8 @@ uartinit() function because that deals serial ports and we need to initialize se
 For our mouseintr(), we decided to create a mouse packet structure dedicated to the mouse packet for easier data extract 
 simplicity for Exercise 3, where we will need to spit out data about changes and events happening in the mouse via a user
 program. Within the mouseintr(), all we do is collect data from the ports (with inclusion of the waits), create a mouse_packet
-instance, and put the data from the port into that structure instance, then add it into our circular buffer. 
+instance, and put the data from the port into that structure instance, then add it into our circular buffer. This mouse interrupt
+will also call a releasesleep(sleeplock*) to wake any processes that are slept on that sleeplock.
 
 To implement the system call of readmouse(char*), we accessed the files of kernel/syscall.c, kernel/syscall.h, user/usys.S,
 kernel/defs.h, and user/user.h. Following suit with existing systemcalls, we will put the readmouse(char*) into our kernel/mouse.c
@@ -31,3 +32,9 @@ implemented inside kernel/mouse.c as well. All it's doing is have sys_readmouse(
 the kernel's readmouse(), which reads from the buffer with sleeplock if there is not enough data in buffer, and then readmouse() returns
 its success with 0 and failure with -1. Finally, in the user program, we pass into the readmouse() as a structure because memory-wise, it is
 the same data structure and both are 3 bytes long, therefore they are complimentary and will not produce negative sideeffects.
+
+Our test user program that we created for Exercise 3 is "ml". When launched via terminal, if user has previously moved their mouse prior to
+running the program, you will receive a sudden amount of outputs because everytime there is a mouse interrupt, it adds into the buffer.
+Any overflow of mouse events mouse (only 129 packets are kept, we made our buffer size small) will be deleted/ignored as stated by
+the homework. By launching user program "ml", it will finally read and remove the mouse packet entries from the buffer. Then it will be 
+kept in a sleep state by the sleeplock until there is a mouse interrupt that wakes it up.
