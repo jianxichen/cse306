@@ -15,8 +15,14 @@
 
 #define ACK (0xFA)
 
-#define IS_SET(stat, bit) ((stat) & (bit))
-#define IS_CLEAR(stat, bit) (!((stat) & (bit)))
+#ifndef ISSET
+  #define ISSET
+  #define IS_SET(stat, bit) ((stat) & (bit))
+#endif
+#ifndef ISCLEAR
+  #define ISCLEAR
+  #define IS_CLEAR(stat, bit) (!((stat) & (bit)))
+#endif
 
 #define BUFLEN 129
 
@@ -32,7 +38,7 @@ static void write_buffer(uint data){
       write = (write+1)%BUFLEN;
       size++;
     } else {
-      cprintf("buffer is full\n");
+      // cprintf("buffer is full\n");
     }
 }
 
@@ -44,7 +50,7 @@ static int read_buffer(){
     size--;
     return out;
   }
-  cprintf("buffer empty\n");
+  // cprintf("buffer empty\n");
   return -1;
 }
 

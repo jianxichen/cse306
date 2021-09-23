@@ -3,12 +3,21 @@
 #include "defs.h"
 #include "kbd.h"
 
-static int PSTAT = (0x64); // REMOVE THESE ONCES WAIT_READ GETS TOO MUCH
-static int PDATA = (0x60); // REMOVE THESE ONCES WAIT_READ GETS TOO MUCH
-static int BIT0 = (0x01); // REMOVE THESE ONCES WAIT_READ GETS TOO MUCH
-static int BIT1 = (0x02); // REMOVE THESE ONCES WAIT_READ GETS TOO MUCH
-static int BIT3 = (0x08); // REMOVE THESE ONCES WAIT_READ GETS TOO MUCH
-static int BIT5 = (0x20); // REMOVE THESE ONCES WAIT_READ GETS TOO MUCH
+static int PSTAT = 0x64; // REMOVE THESE ONCES WAIT_READ GETS TOO MUCH
+// static int PDATA = 0x60; // REMOVE THESE ONCES WAIT_READ GETS TOO MUCH
+static int BIT0 = 0x01; // REMOVE THESE ONCES WAIT_READ GETS TOO MUCH
+// static int BIT1 = 0x02; // REMOVE THESE ONCES WAIT_READ GETS TOO MUCH
+// static int BIT3 = 0x08; // REMOVE THESE ONCES WAIT_READ GETS TOO MUCH
+// static int BIT5 = 0x20; // REMOVE THESE ONCES WAIT_READ GETS TOO MUCH
+
+#ifndef ISSET // REMOVE THESE ONCES WAIT_READ GETS TOO MUCH
+  #define ISSET
+  #define IS_SET(stat, bit) ((stat) & (bit))
+#endif
+#ifndef ISCLEAR // REMOVE THESE ONCES WAIT_READ GETS TOO MUCH
+  #define ISCLEAR
+  #define IS_CLEAR(stat, bit) (!((stat) & (bit)))
+#endif
 
 volatile uint data_buf = 0;  // May be a char array??? Now it seems working, somehow.
 
@@ -69,20 +78,20 @@ static void wait_read()
   cprintf("wait for reading - timeout\n");
 } 
 
-// REMOVE THESE ONCES WAIT_READ GETS TOO MUCH
-static void wait_write()
-{
-  uint timeout = 10000;
-  uchar status = 0;
-  while (--timeout) {
-    status = inb(PSTAT);
-    if (IS_CLEAR(status, BIT1)) {
-      // cprintf("Writable\n");
-      return;
-    }
-  }
-  cprintf("wait for writing - timeout\n");
-}
+// // REMOVE THESE ONCES WAIT_READ GETS TOO MUCH
+// static void wait_write()
+// {
+//   uint timeout = 10000;
+//   uchar status = 0;
+//   while (--timeout) {
+//     status = inb(PSTAT);
+//     if (IS_CLEAR(status, BIT1)) {
+//       // cprintf("Writable\n");
+//       return;
+//     }
+//   }
+//   cprintf("wait for writing - timeout\n");
+// }
 
 void
 kbdintr(void)
