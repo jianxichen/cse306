@@ -24,6 +24,7 @@
 #include "spinlock.h"
 #include "sleeplock.h"
 #include "fs.h"
+#include "semaphore.h"
 #include "buf.h"
 
 struct {

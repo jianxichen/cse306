@@ -9,3 +9,5 @@ _*
 setenvirovar.sh
 .vscode
 .DS_Store
+user/README
+user/mkfs

@@ -11,6 +11,7 @@
 #include "spinlock.h"
 #include "sleeplock.h"
 #include "fs.h"
+#include "semaphore.h"
 #include "buf.h"
 
 #define SECTOR_SIZE   512
@@ -121,7 +122,8 @@ ideintr(void)
   // Wake process waiting for this buf.
   b->flags |= B_VALID;
   b->flags &= ~B_DIRTY;
-  wakeup(b);
+  // wakeup(b); CHANGES HERE
+  sem_V(&b->sem);
 
   // Start disk on next buf in queue.
   if(idequeue != 0)
@@ -146,6 +148,8 @@ iderw(struct buf *b)
   if(b->dev != 0 && !havedisk1)
     panic("iderw: ide disk 1 not present");
 
+  sem_init(&b->sem, 0);
+  
   acquire(&idelock);  //DOC:acquire-lock
 
   // Append b to idequeue.
@@ -159,10 +163,12 @@ iderw(struct buf *b)
     idestart(b);
 
   // Wait for request to finish.
-  while((b->flags & (B_VALID|B_DIRTY)) != B_VALID){
-    sleep(b, &idelock);
-  }
+  // while((b->flags & (B_VALID|B_DIRTY)) != B_VALID){ CHANGES HERE
+  //   sleep(b, &idelock); CHANGES HERE
+  // }
 
 
+  // release(&idelock); CHANGES HERE
   release(&idelock);
+  sem_P(&b->sem);
 }
