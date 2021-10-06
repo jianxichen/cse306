@@ -595,3 +595,13 @@ procdump(void)
     cprintf("\n");
   }
 }
+
+void kfork(void (*func)(void)){
+  struct proc *p=allocproc();
+  if(p==0){
+    panic("no free processes found for kfork");
+  }
+  p->context->eip=(uint)func;
+  p->parent=&(ptable.proc[1]);
+  
+}
