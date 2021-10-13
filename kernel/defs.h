@@ -126,10 +126,7 @@ int             wait(void);
 void            wakeup(void*);
 void            yield(void);
 void            kfork(void (*func)(void));
-<<<<<<< HEAD
-=======
 void            kfortret(void);
->>>>>>> b417ba7 (i tried)
 
 // swtch.S
 void            swtch(struct context**, struct context*);
