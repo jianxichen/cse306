@@ -3,10 +3,11 @@
 #include "param.h"
 #include "memlayout.h"
 #include "mmu.h"
-#include "proc.h"
 #include "x86.h"
 #include "traps.h"
 #include "spinlock.h"
+#include "sleeplock.h"
+#include "proc.h"
 
 // Interrupt descriptor table (shared by all CPUs).
 struct gatedesc idt[256];
@@ -42,6 +43,44 @@ trap(struct trapframe *tf)
       exit();
     myproc()->tf = tf;
     syscall();
+
+    // Serve a process' signal b/c syscall
+    uint ignored=0, shift=0;
+    while(myproc()->pendingsig & ~(myproc()->blockedsig)){ // see if there exists unmasked pending signals
+      uint signal=1<<shift;
+      if((myproc()->pendingsig)&(signal) && (((myproc()->blockedsig)&(signal))==0)){ // isolate for specific signals
+        if((void*)(myproc()->func[shift])>(void*)0){ // check if there exists a user handle for it
+          if(ignored==shift){ // check if signal is ignored
+            continue;
+          }else{
+            // create signal stackframe on user stack
+            // 1) save current trapframe on user stack
+            struct trapframe currtf=*(myproc()->tf);
+            myproc()->tf->esp-=sizeof(struct trapframe);
+            *(struct trapframe*)(myproc()->tf->esp)=currtf;
+            // 2) signum pushed onto user stack
+            myproc()->tf->esp-=4;
+            *(int*)(myproc()->tf->esp)=shift;
+            // 3) push trampoline address to user stack
+            myproc()->tf->esp-=4;
+            *(int*)(myproc()->tf->esp)=(int)(myproc()->tramp);
+            // 4) replace trap frame eip with sighandler
+            myproc()->tf->eip=(uint)(myproc()->func[shift]);
+            // 5) signal being handled is added to mask
+            ignored=(signal==1) ? ignored : ignored|shift; // update ignore mask
+            myproc()->blockedsig|=signal;
+          }
+          acquire(&(myproc()->pendwrite));
+          myproc()->pendingsig&=~shift;
+          release(&(myproc()->pendwrite));
+        }else{
+          kill(myproc()->pid); // pending signal's default action is to be killed
+          break;
+        }
+      }
+      shift=(shift+1)%32;
+    }
+
     if(myproc()->killed)
       exit();
     return;

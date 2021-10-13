@@ -37,3 +37,5 @@
 #define IRQ_ERROR       19
 #define IRQ_SPURIOUS    31  // Was in original xv6, not observed
 #define IRQ_SPURIOUS1   87  // Bochs produces this on first pushf
+
+#define T_SIG           2

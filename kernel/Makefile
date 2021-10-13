@@ -31,7 +31,8 @@ OBJS = \
 	vectors.o\
 	vm.o\
 	helper.o\
-	semaphore.o
+	semaphore.o\
+	sigreturn.o\
 
 kernel: $(OBJS) entry.o entryother initcode kernel.ld
 	$(LD) $(LDFLAGS) -T kernel.ld -o kernel entry.o $(OBJS) -b binary initcode entryother

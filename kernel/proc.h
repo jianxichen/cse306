@@ -49,6 +49,12 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+  uint blockedsig;             // Masked signals
+  uint pendingsig;             // Pending signals
+  struct sleeplock pendsleep;  // Lock for sleep till pending
+  struct spinlock pendwrite;   // Lock to write on pending
+  void (*func[32])(int);       // Handlers for each signal
+  void (*tramp)(void);          // Signal trampoline
 };
 
 // Process memory is laid out contiguously, low addresses first:

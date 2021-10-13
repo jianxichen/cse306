@@ -2,10 +2,12 @@
 #include "param.h"
 #include "memlayout.h"
 #include "mmu.h"
-#include "proc.h"
 #include "defs.h"
 #include "x86.h"
 #include "elf.h"
+#include "spinlock.h"
+#include "sleeplock.h"
+#include "proc.h"
 
 int
 exec(char *path, char **argv)

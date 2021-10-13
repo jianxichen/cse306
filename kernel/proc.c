@@ -4,8 +4,9 @@
 #include "memlayout.h"
 #include "mmu.h"
 #include "x86.h"
-#include "proc.h"
 #include "spinlock.h"
+#include "sleeplock.h"
+#include "proc.h"
 
 struct {
   struct spinlock lock;
@@ -81,8 +82,16 @@ allocproc(void)
   acquire(&ptable.lock);
 
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
-    if(p->state == UNUSED)
+    if(p->state == UNUSED){
+      p->pendingsig=p->blockedsig=(uint)0;
+      initsleeplock(&(p->pendsleep), "pendingsleep");
+      initlock(&(p->pendwrite), "pendingwrite");
+      for(int i=0; i<32; i++){
+        p->func[i]=(void (*) (int)) -1;
+      }
+      p->tramp=sigreturn_bounce;
       goto found;
+    }
 
   release(&ptable.lock);
   return 0;
@@ -596,12 +605,132 @@ procdump(void)
   }
 }
 
+void kforkret(void (*func)(void)){
+  static int first=1;
+  release(&ptable.lock);
+  if(first){
+    first = 0;
+    iinit(ROOTDEV);
+    initlog(ROOTDEV);
+  }
+  func();
+}
+
 void kfork(void (*func)(void)){
+  // allocate process table entry and kernel stack
   struct proc *p=allocproc();
   if(p==0){
     panic("no free processes found for kfork");
   }
-  p->context->eip=(uint)func;
-  p->parent=&(ptable.proc[1]);
   
+  // copy process' parent's (init's) page table
+  if((p->pgdir=copyuvm(ptable.proc[0].pgdir, ptable.proc[0].sz))==0){
+    kfree(p->kstack);
+    p->kstack=0;
+    p->state=UNUSED;
+    panic("failure to copy pagetable to kfork");
+  }
+
+  // setup new process stack
+  p->context->eip=(uint)kforkret; // change the instr ptr to *func
+  // char *ptf=(char *) p->tf - 4; // overwrite trapret to func
+  // *(uint*)ptf=(uint)func; // overwrite trapret to func
+  p->parent=&(ptable.proc[0]); // pid 1 is 0th index, first process = init
+  p->sz=ptable.proc[0].sz; // copy process memory (bytes) size from init process
+  *(p->tf)=*(ptable.proc[0].tf); // copy trapframe from init process
+  safestrcpy(p->name, "kfork", 6);
+  for(int i = 0; i < NOFILE; i++) // copy file ref count
+    if(ptable.proc[0].ofile[i])
+      p->ofile[i] = filedup(ptable.proc[0].ofile[i]);
+  p->cwd=idup(ptable.proc[0].cwd); // set it to root inode
+  p->tf->eax=0; // give trapframe a return of 0
+
+  // set process to runnable
+  acquire(&(ptable.lock));
+  p->state=RUNNABLE;
+  release(&(ptable.lock));
+}
+
+int sigsend(int pid, int sig){
+  struct proc *p;
+  acquire(&(ptable.lock));
+  for(int i=0; i<64; i++){
+    if(ptable.proc[i].state>1 || 4<ptable.proc[i].state){
+      continue;
+    }else if(ptable.proc[i].pid==pid){
+      p=&(ptable.proc[i]);
+      goto found;
+    }
+  }
+  release(&(ptable.lock));
+  return -1;
+  found:
+    release(&(ptable.lock));
+    acquire(&(p->pendwrite));
+    p->pendingsig|=sig;
+    release(&(p->pendwrite));
+    if(holdingsleep(&(p->pendsleep))){
+      releasesleep(&(p->pendsleep));
+    }
+    return 0;
+}
+
+int sigsethandler(int sig, void (*hand)(int sig)){
+  struct proc *p=myproc();
+  if(myproc()->killed){
+    return -1;
+  }
+  if((int)hand<=0){
+    p->func[sig]=(void (*) (int))-1;
+  }else if((int)hand==-2){
+    p->blockedsig|=1<<sig;
+    p->func[sig]=(void (*) (int))-2;
+  }else{
+    p->func[sig]=hand;
+  }
+  return 0;
+}
+
+void sigreturn(void){
+  // clear signal-related stack frame
+  // 2) get signalnum from user stack and remove from mask
+  myproc()->tf->esp+=4; // +4 to skip trampoline address
+  int shift=*(int*)(myproc()->tf->esp);
+  myproc()->blockedsig&=~(1<<shift);
+  // 1) restore trapframe
+  myproc()->tf->esp+=4; // +4 to skip signum
+  struct trapframe prevtf=*(struct trapframe*)(myproc()->tf->esp);
+  *(myproc()->tf)=prevtf; // also moved trapframe esp to where it was before signal stackframe
+}
+
+int siggetmask(void){
+  struct proc *p=myproc();
+  if(p->killed){
+    return -1;
+  }
+  return p->blockedsig;
+}
+
+int sigsetmask(int *maskp){
+  struct proc *p=myproc();
+  if(p->killed){
+    return -1;
+  }
+  int oldmaskp=p->blockedsig;
+  p->blockedsig=*maskp;
+  *maskp=oldmaskp;
+  return 0;
+}
+
+int sigpause(int mask){
+  struct proc *p=myproc();
+  if(p->killed){
+    return -1;
+  }
+  int oldmask=p->blockedsig;
+  p->blockedsig=mask;
+  while((p->pendingsig & ~p->blockedsig)==0)
+    acquiresleep(&(p->pendsleep));
+  p->blockedsig=oldmask;
+  return 0;
 }

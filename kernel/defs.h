@@ -126,6 +126,10 @@ int             wait(void);
 void            wakeup(void*);
 void            yield(void);
 void            kfork(void (*func)(void));
+<<<<<<< HEAD
+=======
+void            kfortret(void);
+>>>>>>> b417ba7 (i tried)
 
 // swtch.S
 void            swtch(struct context**, struct context*);
@@ -195,7 +199,21 @@ void            clearpteu(pde_t *pgdir, char *uva);
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))
 
-//semaphore.c
+// semaphore.c
 void sem_init(struct semaphore *sp, int val);
 void sem_P(struct semaphore *sp);
 void sem_V(struct semaphore *sp);
+
+// helper.c
+void printTick(void);
+
+// signals.c
+int sigsend(int pid, int sig);
+int sigsethandler(int sig, void (*hand)(int sig));
+void sigreturn(void);
+int siggetmask(void);
+int sigsetmask(int *maskp);
+int sigpause(int mask);
+
+// sigreturn.S
+void sigreturn_bounce(void);

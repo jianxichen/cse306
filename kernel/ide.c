@@ -5,7 +5,6 @@
 #include "param.h"
 #include "memlayout.h"
 #include "mmu.h"
-#include "proc.h"
 #include "x86.h"
 #include "traps.h"
 #include "spinlock.h"
@@ -13,6 +12,7 @@
 #include "fs.h"
 #include "semaphore.h"
 #include "buf.h"
+#include "proc.h"
 
 #define SECTOR_SIZE   512
 #define IDE_BSY       0x80

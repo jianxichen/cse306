@@ -5,6 +5,8 @@
 #include "param.h"
 #include "memlayout.h"
 #include "mmu.h"
+#include "spinlock.h"
+#include "sleeplock.h"
 #include "proc.h"
 
 int
@@ -88,4 +90,39 @@ sys_uptime(void)
   xticks = ticks;
   release(&tickslock);
   return xticks;
+}
+
+int sys_sigsend(){
+  int pid, sig;
+  argint(0, &pid);
+  argint(1, &sig);
+  return sigsend(pid, sig);
+}
+
+int sys_sigsethandler(){
+  int sig;
+  void *func;
+  argint(0, &sig);
+  argptr(1, (char**) &func, 4);
+  sigsethandler(sig, func);
+  return 0;
+}
+
+int sys_sigreturn(){
+  sigreturn();
+  return 0;
+}
+
+int sys_siggetmask(){
+  return siggetmask();
+}
+
+int sys_sigsetmask(){
+  int *maskp;
+  argptr(0, (char**)&(maskp), sizeof(*maskp));
+  return sigsetmask(maskp);
+}
+
+int sys_sigpause(){
+  return 0;
 }

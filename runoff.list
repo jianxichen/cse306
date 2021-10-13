@@ -67,6 +67,7 @@ kernel/uart.c
 
 # user-level
 kernel/initcode.S
+kernel/sigreturn.S
 user/usys.S
 user/init.c
 user/sh.c
