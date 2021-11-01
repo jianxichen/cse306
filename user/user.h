@@ -1,10 +1,11 @@
 struct stat;
 struct rtcdate;
+struct ptimes;
 
 // system calls
 int fork(void);
 int exit(void) __attribute__((noreturn));
-int wait(void);
+int wait(struct ptimes *ptime);
 int pipe(int*);
 int write(int, void*, int);
 int read(int, void*, int);
@@ -30,6 +31,8 @@ void sigreturn(void);
 int siggetmask(void);
 int sigsetmask(int *maskp);
 int sigpause(int mask);
+int predict_cpu(int pretick); // hw 3 step 4
+int sleeptick(int); // hw 3 step 5 (but sleep(int)) is already implemented in default xv6
 
 // ulib.c
 int stat(char*, struct stat*);

@@ -11,6 +11,5 @@ void printTick(void){
         if(ticks%100==0){
             cprintf("100 ticks");
         }
-        idle();
     }
 }

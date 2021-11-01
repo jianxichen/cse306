@@ -27,3 +27,5 @@
 #define SYS_siggetmask      26
 #define SYS_sigsetmask      27      
 #define SYS_sigpause        28
+#define SYS_predict_cpu     29
+#define SYS_sleeptick       30 // step 5 hw3 (sleep(int) alrdy exists?)

@@ -25,7 +25,11 @@ sys_exit(void)
 int
 sys_wait(void)
 {
-  return wait();
+  struct ptimes *times;
+  if(argptr(0, (void*)&times, sizeof(struct ptimes))<0){
+    return -2;
+  }
+  return wait(times);
 }
 
 int
@@ -125,4 +129,17 @@ int sys_sigsetmask(){
 
 int sys_sigpause(){
   return 0;
+}
+
+int sys_predict_cpu(){ // step 4 hw 3
+  int pretick;
+  argint(0, &pretick);
+  predict_cpu(pretick);
+  return 0;
+}
+
+int sys_sleeptick(){ // step 5 hw3 (sleep(int) alrdy exists?)
+  // int sleeptick;
+  // argint(0, &sleeptick);
+  return sys_sleep();
 }

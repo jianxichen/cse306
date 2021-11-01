@@ -112,6 +112,8 @@ extern int sys_sigreturn(void);
 extern int sys_siggetmask(void);
 extern int sys_sigsetmask(void);
 extern int sys_sigpause(void);
+extern int sys_predict_cpu(void);
+extern int sys_sleeptick(void);
 
 static int (*syscalls[])(void) = {
 [SYS_fork]          sys_fork,
@@ -142,6 +144,8 @@ static int (*syscalls[])(void) = {
 [SYS_siggetmask]    sys_siggetmask,
 [SYS_sigsetmask]    sys_sigsetmask,
 [SYS_sigpause]      sys_sigpause,
+[SYS_predict_cpu]   sys_predict_cpu,
+[SYS_sleeptick]     sys_sleeptick
 };
 
 void
@@ -155,6 +159,7 @@ syscall(void)
   
   num = curproc->tf->eax;
   if(num > 0 && num < NELEM(syscalls) && syscalls[num]) {
+    // cprintf("      syscall#: %d\n", num);
     curproc->tf->eax = syscalls[num]();
   } else {
     cprintf("%d %s: unknown sys call %d\n",

@@ -65,7 +65,9 @@ cprintf(char *fmt, ...)
   if (fmt == 0)
     panic("null fmt");
 
-  argp = (uint*)(void*)(&fmt + 1);
+  argp = (uint*)(void*)(&fmt + 1); // derefernced fmt, offset by 1 ==> argp is pointer to stack of arguments
+  // *argp[] = {char *fmt addr, arg0, arg2}
+  
   for(i = 0; (c = fmt[i] & 0xff) != 0; i++){
     if(c != '%'){
       consputc(c);
@@ -88,6 +90,16 @@ cprintf(char *fmt, ...)
       for(; *s; s++)
         consputc(*s);
       break;
+    // case 'L':
+    //   // float and decimals points put 8 bytes (sizeof double) on stack maybe?
+    //   // also in little-endianess
+    //   // long long testval=(*((argp+1)));
+    //   // long long testval2=(*((argp)));
+    //   // consputc('z');
+    //   // testval=(testval<<32) | testval2;
+    //   // double testval3=(double)testval;
+    //   // testval3=testval3*100; // dis not needed, only specific for loadavg
+    //   break;
     case '%':
       consputc('%');
       break;

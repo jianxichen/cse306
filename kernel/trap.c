@@ -42,7 +42,10 @@ trap(struct trapframe *tf)
     if(myproc()->killed)
       exit();
     myproc()->tf = tf;
+    myproc()->kernelmode=1; // set my proc flag to kernel-mode, syscall : hw 3 step 6
     syscall();
+    // set my proc flag back to user-mode : hw 3 step 6
+    myproc()->kernelmode=0;
 
     // Serve a process' signal b/c syscall
     uint ignored=0, shift=0;
@@ -81,8 +84,9 @@ trap(struct trapframe *tf)
       shift=(shift+1)%32;
     }
 
-    if(myproc()->killed)
+    if(myproc()->killed){
       exit();
+    }
     return;
   }
 

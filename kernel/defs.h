@@ -10,6 +10,7 @@ struct sleeplock;
 struct stat;
 struct superblock;
 struct semaphore;
+struct ptimes;
 
 // bio.c
 void            binit(void);
@@ -108,6 +109,9 @@ int             pipewrite(struct pipe*, char*, int);
 
 //PAGEBREAK: 16
 // proc.c
+#define         POLICY 0 // Policies - 0:RR; 1:SPN; 2:SRT; 3:HRRN
+extern uint      loadavg;
+extern int      runnables;
 int             cpuid(void);
 void            exit(void);
 int             fork(void);
@@ -122,11 +126,13 @@ void            reschedule(void);
 void            setproc(struct proc*);
 void            sleep(void*, struct spinlock*);
 void            userinit(void);
-int             wait(void);
+int             wait(struct ptimes *);
 void            wakeup(void*);
 void            yield(void);
 void            kfork(void (*func)(void));
 void            kfortret(void);
+void            getPtable(struct proc *p);
+void            predict_cpu(int ticks);
 
 // swtch.S
 void            swtch(struct context**, struct context*);

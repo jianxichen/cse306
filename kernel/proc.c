@@ -7,13 +7,18 @@
 #include "spinlock.h"
 #include "sleeplock.h"
 #include "proc.h"
+#include "helper.h"
 
 struct {
   struct spinlock lock;
   struct proc proc[NPROC];
 } ptable;
 
+uint loadavg=0; // load_avg = p * current_load + (1-p) * load_avg
+int runnables=0; // runnables and loadavg updated every tick timer
+
 static struct proc *initproc;
+static int newproc=0; // new proc flag step 1 hw 3
 
 int nextpid = 1;
 extern void forkret(void);
@@ -22,6 +27,16 @@ extern void trapret(void);
 static void wakeup1(void *chan);
 static void sched(void);
 static struct proc *roundrobin(void);
+static struct proc *shortestprocessnext(void); // step 6 hw 3
+static struct proc *shortestremainingtime(void);
+static struct proc *highestresponseratio(void);
+static struct proc *(*policy[])(void)={
+  [0]       roundrobin,
+  [1]       shortestprocessnext,
+  [2]       shortestremainingtime,
+  [3]       highestresponseratio
+};
+static void adjustallpticks(int ind);
 
 void
 pinit(void)
@@ -90,6 +105,10 @@ allocproc(void)
         p->func[i]=(void (*) (int)) -1;
       }
       p->tramp=sigreturn_bounce;
+      newproc=1;
+      p->tick=(struct ptimes) {0};
+      p->tick.pt_real=ticks;
+      p->eticks=0;
       goto found;
     }
 
@@ -229,6 +248,8 @@ fork(void)
 
   release(&ptable.lock);
 
+  np->kernelmode=0; // hw 3 step 6
+
   return pid;
 }
 
@@ -281,11 +302,12 @@ exit(void)
 // Wait for a child process to exit and return its pid.
 // Return -1 if this process has no children.
 int
-wait(void)
+wait(struct ptimes *ptime)
 {
+  struct proc *curproc = myproc();
+
   struct proc *p;
   int havekids, pid;
-  struct proc *curproc = myproc();
   
   acquire(&ptable.lock);
   for(;;){
@@ -307,6 +329,10 @@ wait(void)
         p->killed = 0;
         p->state = UNUSED;
         release(&ptable.lock);
+        // step 3 hw3 (assume its a pointer pass rather copying over the struct)
+        if(ptime){
+          ptime=&(p->tick);
+        }
         return pid;
       }
     }
@@ -333,11 +359,29 @@ wait(void)
 void
 idle(void)
 {
+  // cprintf("entered idle!\n");
   sti(); // Enable interrupts on this processor
   for(;;) {
-    if(!(readeflags()&FL_IF))
+    if(!(readeflags()&FL_IF)) // if (hardware interrupts is blocked)
       panic("idle non-interruptible");
-    hlt(); // Wait for an interrupt
+    
+    // step 1 hw3 (working?)
+    acquire(&(ptable.lock));
+    int found=newproc; // check new proc flag
+    newproc=0;
+    release(&(ptable.lock));
+    if(found){
+      // pushcli();
+      cli();
+      // cprintf("from idle!\n");
+      reschedule();
+      // popcli();
+      sti();
+    }else{
+      hlt(); // Wait for an interrupt
+    }
+
+    // hlt();
   }
 }
 
@@ -374,6 +418,24 @@ sched(void)
   if(readeflags()&FL_IF)
     panic("sched interruptible");
 
+  // set reset runnables to 0 and count how many processes are competing for CPU / in RUNNABLE
+  runnables=0;
+  for(int i=0; i<NPROC; i++){
+    if(ptable.proc[i].state==RUNNABLE){
+      runnables++;
+    }
+  }
+  // loadavg=0.9992328f*loadavg;
+  // loadavg=loadavg+0.0007672f*runnables;
+  loadavg=(9992328*loadavg)/10000000; // get 4 decimal digit ==> value ABCD=0.ABCD
+  loadavg=loadavg+(7672*runnables*10000)/10000000; // get 4 decimal digit ==> value ABCD=0.ABCD
+// float x = 25.83f*3;
+// int y = (int)(x + 0.5f);
+// cprintf(" this is y %d", y); // this works
+// int loadavgint=(int)(loadavg*10000);
+// cprintf("this is loadavgint %d", loadavgint); // this doesnt
+// y=y; loadavgint=loadavgint;
+
   // Determine the current context, which is what we are switching from.
   if(c->proc) {
     if(c->proc->state == RUNNING)
@@ -383,8 +445,36 @@ sched(void)
     oldcontext = &(c->scheduler);
   }
 
+  // Roundrobin on kernel-mode process first hw 3 step 6
+  // pretty sure there exists a flag/register to see if CPU is in kernel-mode
+  // or not but forgot/unsure of what it is
+  intena=0; // intena used as "found kernel-mode process" flag
+  for(int i = 0; i < NPROC; i++) {
+    p = &(ptable.proc[i]);
+    if((p->state) != RUNNABLE || (p->kernelmode==0)){
+      continue;
+    }
+    if(intena==0){
+      adjustallpticks(p - ptable.proc); // hw 3 step 2|6 : adjust ticks
+      intena=1;
+      break;
+    }
+  }
+  if(intena){ // hw 3 step 6 : choose first kernel-mode process over user
+    // Switch to chosen process.  It is the process's job
+    // to release ptable.lock and then reacquire it
+    // before jumping back to us.
+    p->state = RUNNING;
+    switchuvm(p);
+    if(c->proc != p) {
+      c->proc = p;
+      intena = c->intena;
+      swtch(oldcontext, p->context);
+      mycpu()->intena = intena;  // We might return on a different CPU.
+    }
+  }else 
   // Choose next process to run.
-  if((p = roundrobin()) != 0) {
+  if((p = policy[POLICY]()) != 0) {
     // Switch to chosen process.  It is the process's job
     // to release ptable.lock and then reacquire it
     // before jumping back to us.
@@ -417,14 +507,127 @@ static int rrindex;
 static struct proc *
 roundrobin()
 {
+  // cprintf("applying RR\n");
   // Loop over process table looking for process to run.
   for(int i = 0; i < NPROC; i++) {
     struct proc *p = &ptable.proc[(i + rrindex + 1) % NPROC];
     if(p->state != RUNNABLE)
       continue;
     rrindex = p - ptable.proc;
+    adjustallpticks(rrindex); // hw 3 step 2|6 : adjust ticks
     return p;
   }
+  adjustallpticks(rrindex); // hw 3 step 2|6 : adjust ticks
+  return 0;
+}
+
+static struct proc *shortestprocessnext(){
+  // cprintf("applying SPN\n"); works more/less, some ticks missed
+  static struct proc *running[NCPU]={0};
+  static int openind=-1;
+  // pick a previous processes already ran
+  for(int i=0; i<NCPU; i++){
+    if(running[i]!=0 && running[i]->state==RUNNABLE){
+      adjustallpticks(running[i]-ptable.proc);
+      return running[i];
+    }
+    openind=i; // state of the process isn't an active one, then it's free
+  }
+  int num=-1; // num now used to keep track of index for lowest proc
+  for(int i=0; i<NPROC; i++){
+    if((ptable.proc[i].state != RUNNABLE) || (ptable.proc[i].kernelmode==1)){
+      continue;
+    }
+    if(ptable.proc[i].eticks<0){ // give first priority to neg predict_cpu()
+      num=i;
+      break;
+    }
+    if(num<0){ // first proc availible edge case
+      num=i;
+      continue;
+    }else if(ptable.proc[i].eticks<=ptable.proc[num].eticks){
+      num=i;
+    }
+  }
+  if(num>-1){
+    // save chosen proc into open spot
+    running[openind]=&ptable.proc[num];
+    adjustallpticks(num); // hw 3 step 2|6 : adjust ticks
+    return &ptable.proc[num];
+  }
+  adjustallpticks(num); // hw 3 step 2|6 : adjust ticks
+  return 0;
+}
+
+static struct proc *shortestremainingtime(){
+  // cprintf("applying SRT\n");
+  int num=-1; // num now used to keep track of index
+  // Loop over process table looking for shortest process to run.
+  for(int i = 0; i < NPROC; i++){
+    if((ptable.proc[i].state != RUNNABLE) || (ptable.proc[i].kernelmode==1)){
+      continue;
+    }
+    if(ptable.proc[i].eticks<0){ // give first priority to neg predict_cpu()
+      num=i;
+      break;
+    }
+    if(num<0){ // first proc availible edge case
+      num=i;
+      continue;
+    }
+    int comp=ptable.proc[i].eticks-ptable.proc[i].tick.pt_cpu;
+    int org=ptable.proc[num].eticks-ptable.proc[num].tick.pt_cpu;
+    if(comp<org){
+      num=i;
+    }
+  }
+  if(num>-1){
+    adjustallpticks(num); // hw 3 step 2|6 : adjust ticks
+    return &ptable.proc[num];
+  }
+  adjustallpticks(num); // hw 3 step 2|6 : adjust ticks
+  return 0;
+}
+
+static struct proc *highestresponseratio(){
+  // cprintf("applying HRRN\n");
+  static struct proc *running[NCPU]={0};
+  static int openind=-1;
+  // pick a processes that had already ran
+  for(int i=0; i<NCPU; i++){
+    if(running[i]!=0 && running[i]->state==RUNNABLE){
+      adjustallpticks(running[i]-ptable.proc);
+      return running[i];
+    }
+    openind=i; // state of the process isn't an active one, then it's free
+  }
+  int num=-1; // num now used to keep track of index
+  for(int i = 0; i < NPROC; i++){
+    if((ptable.proc[i].state != RUNNABLE) || (ptable.proc[i].kernelmode==1)){
+      continue;
+    }
+    if(ptable.proc[i].eticks<0){ // give first priority to neg predict_cpu()
+      num=i;
+      break;
+    }else if(num<0){ // first proc availible edge case
+      num=i;
+    }else{
+      float org=(ptable.proc[num].tick.pt_wait+(ptable.proc[num].eticks-ptable.proc[num].tick.pt_cpu)) /
+                (ptable.proc[num].eticks-ptable.proc[num].tick.pt_cpu);
+      float comp=(ptable.proc[i].tick.pt_wait+(ptable.proc[i].eticks-ptable.proc[i].tick.pt_cpu)) /
+                (ptable.proc[i].eticks-ptable.proc[i].tick.pt_cpu);
+      if(comp>org){
+        num=i;
+      }
+    }
+  }
+  if(num>-1){
+    // save chosen proc into open spot
+    running[openind]=&ptable.proc[num];
+    adjustallpticks(num); // hw 3 step 2|6 : adjust ticks
+    return &ptable.proc[num];
+  }
+  adjustallpticks(num); // hw 3 step 2|6 : adjust ticks
   return 0;
 }
 
@@ -434,7 +637,7 @@ reschedule(void)
 {
   struct cpu *c = mycpu();
 
-  acquire(&ptable.lock);
+  acquire(&ptable.lock); // nlci+1
   if(c->proc) {
     if(c->proc->state != RUNNING)
       panic("current process not in running state");
@@ -595,7 +798,9 @@ procdump(void)
       state = states[p->state];
     else
       state = "???";
-    cprintf("%d %s %s", p->pid, state, p->name);
+    cprintf("%d %s %s; real:%d cpu:%d wait:%d sleep:%d", 
+        p->pid, state, p->name, p->tick.pt_real, 
+        p->tick.pt_cpu, p->tick.pt_wait, p->tick.pt_sleep);
     if(p->state == SLEEPING){
       getcallerpcs((uint*)p->context->ebp+2, pc);
       for(i=0; i<10 && pc[i] != 0; i++)
@@ -603,6 +808,11 @@ procdump(void)
     }
     cprintf("\n");
   }
+  // step 2 hw3 done (only need a way to calculate loadavg, for another part)
+  // floatloadavg=0.0;
+  cprintf("uptime:%d runnables:%d ", ticks, runnables); // create on modifier to print load avg
+  cprintf("loadavg:%d", (loadavg/100)%100); // before dec
+  cprintf(".%d%d%\n", loadavg/10%10, loadavg%10); // after dec
 }
 
 void kforkret(void (*func)(void)){
@@ -649,6 +859,7 @@ void kfork(void (*func)(void)){
   acquire(&(ptable.lock));
   p->state=RUNNABLE;
   release(&(ptable.lock));
+  p->kernelmode=1; // hw 3 step 6 ; is a kernel thread
 }
 
 int sigsend(int pid, int sig){
@@ -733,4 +944,59 @@ int sigpause(int mask){
     acquiresleep(&(p->pendsleep));
   p->blockedsig=oldmask;
   return 0;
+}
+
+void getPtable(struct proc *p){
+  acquire(&(ptable.lock));
+  for(int i=0; i<NPROC; i++){
+    p[i]=ptable.proc[i];
+  }
+  release(&(ptable.lock));
+}
+
+int getpt_real(struct proc *p){
+  return p->tick.pt_real;
+}
+
+int getpt_cpu(struct proc *p){
+  return p->tick.pt_cpu;
+}
+
+int getpt_wait(struct proc *p){
+  return p->tick.pt_wait;
+}
+
+int getpt_sleep(struct proc *p){
+  return p->tick.pt_sleep;
+}
+
+int getloadavg(){
+  return loadavg;
+}
+
+void predict_cpu(int ticks){
+  myproc()->eticks=ticks;
+}
+
+// Adjust all valid processes' ticks accordingly
+// Given argument is the index of chosen process in ptable
+static void adjustallpticks(int ind){
+  for(int i=0; i<NPROC; i++){
+    struct proc *p=&ptable.proc[i];
+    enum procstate ps=p->state;
+    if(ps==SLEEPING){
+      p->tick.pt_sleep++;
+    }else if(i==ind){
+      // must be compared before ps==RUNNABLE
+      // b/c chosen proc is still RUNNABLE state
+      // processes in RUNNING state will be 
+      // adjusted by the respective CPU
+      p->tick.pt_cpu++;
+    }else if(ps==RUNNABLE){
+      p->tick.pt_wait++;
+    }
+    if(ps!=UNUSED){ // increment all valid processes
+      p->tick.pt_real++;
+    }
+  }
 }

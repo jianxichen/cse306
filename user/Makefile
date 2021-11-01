@@ -23,7 +23,8 @@ UPROGS=\
 	_wc\
 	_zombie\
 	_ml\
-	_sigdummy
+	_sigdummy\
+	_ticker
 
 fs.img: mkfs README $(UPROGS)
 	./mkfs fs.img README $(UPROGS)

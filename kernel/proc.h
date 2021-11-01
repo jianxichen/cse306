@@ -34,6 +34,13 @@ struct context {
 
 enum procstate { UNUSED, EMBRYO, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
+struct ptimes {
+  int pt_real;   // Ticks since process creation
+  int pt_cpu;    // Ticks of CPU time consumed
+  int pt_wait;   // Ticks spent waiting for CPU
+  int pt_sleep;  // Ticks spent sleeping
+};
+
 // Per-process state
 struct proc {
   uint sz;                     // Size of process memory (bytes)
@@ -54,7 +61,10 @@ struct proc {
   struct sleeplock pendsleep;  // Lock for sleep till pending
   struct spinlock pendwrite;   // Lock to write on pending
   void (*func[32])(int);       // Handlers for each signal
-  void (*tramp)(void);          // Signal trampoline
+  void (*tramp)(void);         // Signal trampoline
+  struct ptimes tick;          // tick data tracker
+  int eticks;                  // the estimated ticks; step 4 hw 3
+  int kernelmode;              // my flag for kernel mode step 4 hw 3
 };
 
 // Process memory is laid out contiguously, low addresses first:
