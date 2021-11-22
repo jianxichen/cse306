@@ -27,5 +27,6 @@ Exercise 3:
 In order to complete this exercise, I modified syscalls like mkdir and rm. In addition, I modified buffer write functions that would've first 
 written a log into log.c to do not write in log.c if the buffer being written is for device 2. Other example functions include dirlink, dirunlink
 I decided on this change because providing a crash recovery would simply be a little too much work when all we're doing is just adding inodes and 
-writing data. All in all, this was similar to Exercise 2, but I made a design choice to immediately write straight into the disk rather than 
-log it due to the fact that refactoring log.c to have a crash recovery for the unixv5 file system wasn't signficant.
+writing data. I also used the freelists to find open datablocks and inodes. All in all, this was similar to Exercise 2, but I made a design 
+choice to immediately write straight into the disk rather than log it due to the fact that refactoring log.c to have a crash recovery for the 
+unixv5 file system wasn't signficant.
