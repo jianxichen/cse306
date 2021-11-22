@@ -60,6 +60,11 @@ void            ideinit(void);
 void            ideintr(void);
 void            iderw(struct buf*);
 
+// ide2.c
+void            ide2init(void);
+void            ide2intr(void);
+void            ide2rw(struct buf*);
+
 // ioapic.c
 void            ioapicenable(int irq, int cpu);
 extern uchar    ioapicid;
@@ -133,6 +138,7 @@ void            kfork(void (*func)(void));
 void            kfortret(void);
 void            getPtable(struct proc *p);
 void            predict_cpu(int ticks);
+int             getppid(struct proc *p);
 
 // swtch.S
 void            swtch(struct context**, struct context*);
@@ -220,3 +226,7 @@ int sigpause(int mask);
 
 // sigreturn.S
 void sigreturn_bounce(void);
+
+// ufs.c
+void unix_init(int dev);
+int u_readi(struct inode *ip, char *dst, uint off, uint n);

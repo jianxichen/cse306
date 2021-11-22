@@ -34,6 +34,7 @@
 #define IRQ_COM1         4
 #define IRQ_MOUSE       12
 #define IRQ_IDE         14
+#define IRQ_IDE2        15  // hw 4 exer 1
 #define IRQ_ERROR       19
 #define IRQ_SPURIOUS    31  // Was in original xv6, not observed
 #define IRQ_SPURIOUS1   87  // Bochs produces this on first pushf

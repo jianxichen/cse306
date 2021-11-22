@@ -1,0 +1,61 @@
+// Fake IDE2 disk; stores blocks in memory.
+// Useful for running kernel without scratch disk.
+
+#include "types.h"
+#include "defs.h"
+#include "param.h"
+#include "mmu.h"
+#include "x86.h"
+#include "traps.h"
+#include "spinlock.h"
+#include "sleeplock.h"
+#include "proc.h"
+#include "fs.h"
+#include "semaphore.h"
+#include "buf.h"
+
+extern uchar _binary_fs_img_start[], _binary_fs_img_size[];
+
+static int disksize;
+static uchar *memdisk;
+
+void
+ide2init(void)
+{
+  memdisk = _binary_fs_img_start;
+  disksize = (uint)_binary_fs_img_size/BSIZE;
+}
+
+// Interrupt handler.
+void
+ide2intr(void)
+{
+  // no-op
+}
+
+// Sync buf with disk.
+// If B_DIRTY is set, write buf to disk, clear B_DIRTY, set B_VALID.
+// Else if B_VALID is not set, read buf from disk, set B_VALID.
+void
+ide2rw(struct buf *b)
+{
+  uchar *p;
+
+  if(!holdingsleep(&b->lock))
+    panic("ide2rw: buf not locked");
+  if((b->flags & (B_VALID|B_DIRTY)) == B_VALID)
+    panic("ide2rw: nothing to do");
+  if(b->dev != 2 && b->dev != 3)
+    panic("ide2rw: request not for disk 2 or 3");
+  if(b->blockno >= disksize)
+    panic("ide2rw: block out of range");
+
+  p = memdisk + b->blockno*BSIZE;
+
+  if(b->flags & B_DIRTY){
+    b->flags &= ~B_DIRTY;
+    memmove(p, b->data, BSIZE);
+  } else
+    memmove(b->data, p, BSIZE);
+  b->flags |= B_VALID;
+}

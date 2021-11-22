@@ -4,6 +4,7 @@
 #include "spinlock.h"
 #include "sleeplock.h"
 #include "fs.h"
+#include "ufs.h"
 #include "semaphore.h"
 #include "buf.h"
 
@@ -47,6 +48,7 @@ struct log {
   struct logheader lh;
 };
 struct log log;
+struct log log2; // log for IDE2
 
 static void recover_from_log(void);
 static void commit();

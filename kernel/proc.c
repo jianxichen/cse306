@@ -421,7 +421,7 @@ sched(void)
   // set reset runnables to 0 and count how many processes are competing for CPU / in RUNNABLE
   runnables=0;
   for(int i=0; i<NPROC; i++){
-    if(ptable.proc[i].state==RUNNABLE){
+    if(ptable.proc[i].state==RUNNABLE||ptable.proc[i].state==RUNNING){
       runnables++;
     }
   }
@@ -682,6 +682,9 @@ forkret(void)
     first = 0;
     iinit(ROOTDEV);
     initlog(ROOTDEV);
+
+    unix_init(2);
+    // no need for log cuz not writing, at least no need to implement crash recovery
   }
 
   // Return to "caller", actually trapret (see allocproc).
@@ -999,4 +1002,11 @@ static void adjustallpticks(int ind){
       p->tick.pt_real++;
     }
   }
+}
+
+int getppid(struct proc *p){
+  if(p){
+    return p->pid;
+  }
+  return myproc()->pid;
 }

@@ -86,6 +86,7 @@ int main(){
         printf(0, "real:%d  cpu:%d  wait:%d  sleep:%d", times.pt_real, times.pt_cpu, times.pt_wait, times.pt_sleep);
         r--;
     }
+    exit();
 }
 
 /*

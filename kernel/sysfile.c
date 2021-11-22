@@ -15,6 +15,7 @@
 #include "proc.h"
 #include "file.h"
 #include "fcntl.h"
+#include "ufs.h"
 
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
@@ -131,7 +132,7 @@ sys_link(void)
   }
 
   ilock(ip);
-  if(ip->type == T_DIR){
+  if(ip->type == T_DIR || (ip->type&IFDIR)==IFDIR){
     iunlockput(ip);
     end_op();
     return -1;
@@ -210,7 +211,7 @@ sys_unlink(void)
 
   if(ip->nlink < 1)
     panic("unlink: nlink < 1");
-  if(ip->type == T_DIR && !isdirempty(ip)){
+  if((ip->type == T_DIR || (ip->type&IFDIR)==IFDIR) && !isdirempty(ip)){
     iunlockput(ip);
     goto bad;
   }
@@ -218,7 +219,7 @@ sys_unlink(void)
   memset(&de, 0, sizeof(de));
   if(writei(dp, (char*)&de, off, sizeof(de)) != sizeof(de))
     panic("unlink: writei");
-  if(ip->type == T_DIR){
+  if(ip->type == T_DIR || (ip->type&IFDIR)==IFDIR){
     dp->nlink--;
     iupdate(dp);
   }
@@ -239,44 +240,53 @@ bad:
 }
 
 static struct inode*
-create(char *path, short type, short major, short minor)
-{
+create(char *path, short type, short major, short minor){
   uint off;
   struct inode *ip, *dp;
   char name[DIRSIZ];
 
-  if((dp = nameiparent(path, name)) == 0)
+  if((dp = nameiparent(path, name)) == 0) // will get parent inode
     return 0;
-  ilock(dp);
+  ilock(dp); // read parent inode from disk
 
   if((ip = dirlookup(dp, name, &off)) != 0){
+    // check if a dirent already exists within
     iunlockput(dp);
     ilock(ip);
-    if(type == T_FILE && ip->type == T_FILE)
-      return ip;
+    if(((type&T_FILE) == T_FILE && ip->type == T_FILE) || ((type&IFDIR)!=IFDIR && (ip->type&IFDIR)!=IFDIR))
+      return ip; // if it is a FILE, then return that FILE inode
     iunlockput(ip);
-    return 0;
+    return 0; // dirent already exists within
   }
 
+  // Will need to fix type so it can align between xv6 or Uv5
+  if(type==(T_DIR|IFDIR)){
+    // Coming from sys_mkdir
+    if(dp->dev<2){
+      type=T_DIR;
+    }else{
+      type=IFDIR;
+    }
+  }
   if((ip = ialloc(dp->dev, type)) == 0)
     panic("create: ialloc");
 
   ilock(ip);
-  ip->major = major;
-  ip->minor = minor;
+  ip->major = (ip->dev<2)?major:3; // For Uv5, assume UID=3
+  ip->minor = (ip->dev<2)?minor:1; // For Uv5, assume GID=1
   ip->nlink = 1;
   iupdate(ip);
 
-  if(type == T_DIR){  // Create . and .. entries.
+  if(type==T_DIR || type==IFDIR){  // Create . and .. entries.
     dp->nlink++;  // for ".."
     iupdate(dp);
     // No ip->nlink++ for ".": avoid cyclic ref count.
     if(dirlink(ip, ".", ip->inum) < 0 || dirlink(ip, "..", dp->inum) < 0)
-      panic("create dots");
+      panic("create dots"); // attempt to bind "." to itself and ".." to parent
   }
 
   if(dirlink(dp, name, ip->inum) < 0)
-    panic("create: dirlink");
+    panic("create: dirlink"); // attempt to bind 
 
   iunlockput(dp);
 
@@ -307,8 +317,8 @@ sys_open(void)
       end_op();
       return -1;
     }
-    ilock(ip);
-    if(ip->type == T_DIR && omode != O_RDONLY){
+    ilock(ip); // this clears?
+    if((ip->type == T_DIR || (ip->type&IFDIR)==IFDIR) && omode != O_RDONLY){
       iunlockput(ip);
       end_op();
       return -1;
@@ -340,7 +350,7 @@ sys_mkdir(void)
   struct inode *ip;
 
   begin_op();
-  if(argstr(0, &path) < 0 || (ip = create(path, T_DIR, 0, 0)) == 0){
+  if(argstr(0, &path) < 0 || (ip = create(path, T_DIR|IFDIR, 0, 0)) == 0){
     end_op();
     return -1;
   }
@@ -382,7 +392,7 @@ sys_chdir(void)
     return -1;
   }
   ilock(ip);
-  if(ip->type != T_DIR){
+  if(ip->type != T_DIR && (ip->type&IFDIR)!=IFDIR){
     iunlockput(ip);
     end_op();
     return -1;

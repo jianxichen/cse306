@@ -9,6 +9,12 @@ xv6.img: subdirs
 	dd if=$(BOOT)/bootblock of=xv6.img conv=notrunc
 	dd if=$(KERNEL)/kernel of=xv6.img seek=1 conv=notrunc
 
+disk2.img:
+	dd if=unix-v5-boot.img of=disk2.img 
+
+disk3.img:
+	dd if=unix-v5-boot.img of=disk3.img 
+
 xv6memfs.img: subdirs
 	dd if=/dev/zero of=xv6memfs.img count=10000
 	dd if=$(BOOT)/bootblock of=xv6memfs.img conv=notrunc
@@ -35,7 +41,7 @@ print: xv6.pdf
 
 # run in emulators
 
-bochs : $(USER)/fs.img xv6.img
+bochs : $(USER)/fs.img xv6.img disk2.img disk3.img
 	if [ ! -e .bochsrc ]; then ln -s dot-bochsrc .bochsrc; fi
 	/opt/bochs/bin/bochs -q
 
@@ -69,25 +75,30 @@ QEMUGDB = $(shell if $(QEMU) -help | grep -q '^-gdb'; \
 ifndef CPUS
 CPUS := 2
 endif
-QEMUOPTS = -drive file=$(USER)/fs.img,index=1,media=disk,format=raw -drive file=xv6.img,index=0,media=disk,format=raw -smp $(CPUS) -m 512 $(QEMUEXTRA)
+# QEMUOPTS = -drive file=$(USER)/fs.img,index=1,media=disk,format=raw -drive file=xv6.img,index=0,media=disk,format=raw -smp $(CPUS) -m 512 $(QEMUEXTRA)
+QEMUOPTS = -drive file=$(USER)/fs.img,index=1,media=disk,format=raw \
+  	-drive file=xv6.img,index=0,media=disk,format=raw \
+	-drive file=disk2.img,index=2,format=raw \
+  	-drive file=disk3.img,index=3,format=raw \
+	-smp $(CPUS) -m 512 $(QEMUEXTRA)
 
-qemu: xv6.img $(USER)/fs.img
+qemu: xv6.img $(USER)/fs.img disk2.img disk3.img
 	$(QEMU) -serial mon:stdio $(QEMUOPTS)
 
 qemu-memfs: xv6memfs.img
 	$(QEMU) -drive file=xv6memfs.img,index=0,media=disk,format=raw -smp $(CPUS) -m 256
 
-qemu-nox: xv6.img $(USER)/fs.img
+qemu-nox: xv6.img $(USER)/fs.img disk2.img disk3.img
 	$(QEMU) -nographic $(QEMUOPTS)
 
 .gdbinit: .gdbinit.tmpl
 	sed "s/localhost:1234/localhost:$(GDBPORT)/" < $^ > $@
 
-qemu-gdb: xv6.img $(USER)/fs.img .gdbinit
+qemu-gdb: xv6.img $(USER)/fs.img disk2.img disk3.img .gdbinit
 	@echo "*** Now run 'gdb'." 1>&2
 	$(QEMU) -serial mon:stdio $(QEMUOPTS) -S $(QEMUGDB)
 
-qemu-nox-gdb: xv6.img $(USER)/fs.img .gdbinit
+qemu-nox-gdb: xv6.img $(USER)/fs.img disk2.img disk3.img .gdbinit
 	@echo "*** Now run 'gdb'." 1>&2
 	$(QEMU) -nographic $(QEMUOPTS) -S $(QEMUGDB)
 
@@ -102,6 +113,6 @@ clean:
 	cd $(KERNEL); make clean
 	cd $(USER); make clean
 	rm -f *.tex *.dvi *.idx *.aux *.log *.ind *.ilg \
-	*.o *.d *.asm *.sym xv6.img .gdbinit
+	*.o *.d *.asm *.sym xv6.img disk2.img disk3.img .gdbinit
 
 -include *.d

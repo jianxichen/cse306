@@ -8,8 +8,10 @@ void
 cat(int fd)
 {
   int n;
-
+  printf(1, "debug: starting to cat read\n");
   while((n = read(fd, buf, sizeof(buf))) > 0) {
+    // keep reading until EOF
+    printf(1, "debug: cat reading\n");
     if (write(1, buf, n) != n) {
       printf(1, "cat: write error\n");
       exit();
