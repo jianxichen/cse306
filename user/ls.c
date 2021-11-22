@@ -66,9 +66,9 @@ ls(char *path)
         printf(1, "ls: cannot stat %s\n", buf);
         continue;
       }
-if((st.type&ILARG)==ILARG){
-printf(1, "debug: ls this is ILARG file ");
-}
+// if((st.type&ILARG)==ILARG){
+// printf(1, "debug: ls this is ILARG file ");
+// }
       printf(1, "%s %d %d %d\n", fmtname(buf), st.type, st.ino, st.size);
     }
     break;
