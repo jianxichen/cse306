@@ -109,11 +109,12 @@ struct segdesc {
 // |      Index     |      Index     |                     |
 // +----------------+----------------+---------------------+
 //  \--- PDX(va) --/ \--- PTX(va) --/
+// Each entry contain a Phys.Page Num (PPN) that points to base/start of the next step for VirtMem
 
-// page directory index
+// page directory index: get leftmost 10 bits for index offset from CR3 register for the PDentry in VA
 #define PDX(va)         (((uint)(va) >> PDXSHIFT) & 0x3FF)
 
-// page table index
+// page table index: get middle 10 bits for index offset from PDentry PPN for the PTentry in VA
 #define PTX(va)         (((uint)(va) >> PTXSHIFT) & 0x3FF)
 
 // construct virtual address from indexes and offset
@@ -128,6 +129,7 @@ struct segdesc {
 #define PTXSHIFT        12      // offset of PTX in a linear address
 #define PDXSHIFT        22      // offset of PDX in a linear address
 
+// Macros to round the address sent to a multiple of the PGSIZE
 #define PGROUNDUP(sz)  (((sz)+PGSIZE-1) & ~(PGSIZE-1))
 #define PGROUNDDOWN(a) (((a)) & ~(PGSIZE-1))
 
@@ -142,12 +144,11 @@ struct segdesc {
 #define PTE_PS          0x080   // Page Size
 #define PTE_MBZ         0x180   // Bits must be zero
 
-// Address in page table or page directory entry
-#define PTE_ADDR(pte)   ((uint)(pte) & ~0xFFF)
-#define PTE_FLAGS(pte)  ((uint)(pte) &  0xFFF)
+// Filter content in a page table or page directory entry
+#define PTE_ADDR(pte)   ((uint)(pte) & ~0xFFF) // Get left 20 bits (entry's PPN value)
+#define PTE_FLAGS(pte)  ((uint)(pte) &  0xFFF) // Get right 12 bits (entry's permissions)
 
 #ifndef __ASSEMBLER__
-typedef uint pte_t;
 
 // Task state segment format
 struct taskstate {

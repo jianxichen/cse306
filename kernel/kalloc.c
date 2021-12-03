@@ -23,6 +23,10 @@ struct {
   struct run *freelist;
 } kmem;
 
+// There exists max (PHYSTOP)>>12 PPNs to use, indexed by PPN
+unsigned char pgrefcounter[PHYSTOP>>12]; // Refcnt for Pt entry
+struct spinlock pgreflock; // Lock pgrefcounter
+
 // Initialization happens in two phases.
 // 1. main() calls kinit1() while still using entrypgdir to place just
 // the pages mapped by entrypgdir on free list.
@@ -32,6 +36,7 @@ void
 kinit1(void *vstart, void *vend)
 {
   initlock(&kmem.lock, "kmem");
+  initlock(&pgreflock, "Pgref");
   kmem.use_lock = 0;
   freerange(vstart, vend);
 }
@@ -79,18 +84,49 @@ kfree(char *v)
 // Allocate one 4096-byte page of physical memory.
 // Returns a pointer that the kernel can use.
 // Returns 0 if the memory cannot be allocated.
+// Returned address pointer is virtual-adjusted
 char*
 kalloc(void)
 {
   struct run *r;
 
-  if(kmem.use_lock)
+  if(kmem.use_lock){
     acquire(&kmem.lock);
+  }
   r = kmem.freelist;
-  if(r)
+  if(r){
+    // Freelist is from highest virt. addr to lowest virt.addr
+    // Within run *r points to next left free addr of r addr
     kmem.freelist = r->next;
-  if(kmem.use_lock)
+  }
+  if(kmem.use_lock){
     release(&kmem.lock);
+  }
   return (char*)r;
 }
 
+void chgpgrefc(void *va, uint dif){
+  if(kmem.use_lock){
+    // Purpose is for use after kinits
+    // indexed PPN for ref counter is (r-KERNBASE)>>12
+    unsigned int ppn=((uint)va - KERNBASE)>>12;
+    acquire(&pgreflock);
+    pgrefcounter[ppn]+=dif;
+    // cprintf("changing ppn 0x%x by %d\n", ppn, dif);
+    release(&pgreflock);
+  }
+}
+
+uchar getpgrefc(void *va){
+  if(kmem.use_lock){
+    // Purpose is for use after kinits
+    // indexed PPN for ref counter is (r-KERNBASE)>>12
+    unsigned int ppn=((uint)va - KERNBASE)>>12;
+    acquire(&pgreflock);
+    uchar c=pgrefcounter[ppn];
+    release(&pgreflock);
+    return c;
+  }
+  panic("somehow ended up here before kinit2 done?");
+  return 0;
+}

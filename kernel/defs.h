@@ -11,6 +11,7 @@ struct stat;
 struct superblock;
 struct semaphore;
 struct ptimes;
+struct pte_t;
 
 // bio.c
 void            binit(void);
@@ -75,6 +76,8 @@ char*           kalloc(void);
 void            kfree(char*);
 void            kinit1(void*, void*);
 void            kinit2(void*, void*);
+void            chgpgrefc(void *va, uint dif);
+uchar           getpgrefc(void *va);
 
 // kbd.c
 void            kbdintr(void);
@@ -191,6 +194,7 @@ void            uartputc(int);
 
 // vm.c
 void            seginit(void);
+pte_t*          walkpgdir(pde_t *pgdir, const void *va, int alloc);
 void            kvmalloc(void);
 pde_t*          setupkvm(void);
 char*           uva2ka(pde_t*, char*);
@@ -204,6 +208,7 @@ void            switchuvm(struct proc*);
 void            switchkvm(void);
 int             copyout(pde_t*, uint, void*, uint);
 void            clearpteu(pde_t *pgdir, char *uva);
+void            pgfaultintr();
 
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))

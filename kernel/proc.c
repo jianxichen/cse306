@@ -219,13 +219,28 @@ fork(void)
     return -1;
   }
 
-  // Copy process state from proc.
-  if((np->pgdir = copyuvm(curproc->pgdir, curproc->sz)) == 0){
-    kfree(np->kstack);
-    np->kstack = 0;
-    np->state = UNUSED;
-    return -1;
+  // // Copy process state from proc.
+  // if((np->pgdir = copyuvm(curproc->pgdir, curproc->sz)) == 0){
+  //   kfree(np->kstack);
+  //   np->kstack = 0;
+  //   np->state = UNUSED;
+  //   return -1;
+  // }
+
+  // Reference copy of curproc's Pd
+  np->pgdir=curproc->pgdir;
+  // Iterate all encompassing Pt entries in Pdirectory
+  pte_t *pte;
+  for(int i=0; i<curproc->sz; i+=PGSIZE){
+    if((pte=walkpgdir(curproc->pgdir, (void*)i, 0))==0){
+      panic("forklazy should exist pte but doesn't");
+    }
+    *pte&=~PTE_W;
+    // get PPN in pte
+    chgpgrefc(P2V((void*)(*pte)), 1);
   }
+  lcr3(V2P(curproc->pgdir));
+
   np->sz = curproc->sz;
   np->parent = curproc;
   *np->tf = *curproc->tf;
@@ -801,6 +816,8 @@ procdump(void)
       state = states[p->state];
     else
       state = "???";
+
+    // For CPU tick info & call-stack printing
     cprintf("%d %s %s; real:%d cpu:%d wait:%d sleep:%d", 
         p->pid, state, p->name, p->tick.pt_real, 
         p->tick.pt_cpu, p->tick.pt_wait, p->tick.pt_sleep);
@@ -809,13 +826,16 @@ procdump(void)
       for(i=0; i<10 && pc[i] != 0; i++)
         cprintf(" %p", pc[i]);
     }
+
+    // For CPU mem page info and kernel stack
+    // cprintf("%d %s %s");
     cprintf("\n");
   }
   // step 2 hw3 done (only need a way to calculate loadavg, for another part)
   // floatloadavg=0.0;
-  cprintf("uptime:%d runnables:%d ", ticks, runnables); // create on modifier to print load avg
-  cprintf("loadavg:%d", (loadavg/100)%100); // before dec
-  cprintf(".%d%d%\n", loadavg/10%10, loadavg%10); // after dec
+  // cprintf("uptime:%d runnables:%d ", ticks, runnables); // create on modifier to print load avg
+  // cprintf("loadavg:%d", (loadavg/100)%100); // before dec
+  // cprintf(".%d%d%\n", loadavg/10%10, loadavg%10); // after dec
 }
 
 void kforkret(void (*func)(void)){
@@ -837,12 +857,12 @@ void kfork(void (*func)(void)){
   }
   
   // copy process' parent's (init's) page table
-  if((p->pgdir=copyuvm(ptable.proc[0].pgdir, ptable.proc[0].sz))==0){
-    kfree(p->kstack);
-    p->kstack=0;
-    p->state=UNUSED;
-    panic("failure to copy pagetable to kfork");
-  }
+  // if((p->pgdir=copyuvm(ptable.proc[0].pgdir, ptable.proc[0].sz))==0){
+  //   kfree(p->kstack);
+  //   p->kstack=0;
+  //   p->state=UNUSED;
+  //   panic("failure to copy pagetable to kfork");
+  // }
 
   // setup new process stack
   p->context->eip=(uint)kforkret; // change the instr ptr to *func

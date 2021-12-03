@@ -40,6 +40,7 @@ main(void)
   userinit();      // first user process
   // kfork(printTick);// kernel thread
   mpmain();        // finish this processor's setup
+  cprintf("is this slow?\n");
 }
 
 // Other CPUs jump here from entryother.S.

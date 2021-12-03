@@ -12,6 +12,9 @@
 extern char data[];  // defined by kernel.ld
 pde_t *kpgdir;  // for use in scheduler()
 
+extern unsigned int pgrefcounter[];
+extern struct spinlock pgreflock;
+
 // Set up CPU's kernel segment descriptors.
 // Run once on entry on each CPU.
 void
@@ -33,27 +36,39 @@ seginit(void)
 
 // Return the address of the PTE in page table pgdir
 // that corresponds to virtual address va.  If alloc!=0,
-// create any required page table pages.
-static pte_t *
+// create any required page table pages. TLDR: Find the pte_t entry in pgdir via va.
+pte_t *
 walkpgdir(pde_t *pgdir, const void *va, int alloc)
 {
   pde_t *pde;
   pte_t *pgtab;
 
+  // Convert/Assume pgdir as array of pde_t at ind=0
+  // From VA, get Pdirect index offset from pgdir
+  // Use index offset to get pde_t from pgdir
   pde = &pgdir[PDX(va)];
-  if(*pde & PTE_P){
-    pgtab = (pte_t*)P2V(PTE_ADDR(*pde));
-  } else {
-    if(!alloc || (pgtab = (pte_t*)kalloc()) == 0)
+  if(*pde & PTE_P){ // Check if Pdirectory entry is Present
+    // Access Pdirectory entry address 
+    // Extract only the PPN from entry
+    // Then adjust PPN to virtual ==> pgtab is virtual-adjusted PPN
+    pgtab = (pte_t*)P2V(PTE_ADDR(*pde)); // pgtab points to base/start of fresh Ptable
+  } else { // Pdirectory entry is not present
+    // Allocates a Ptable
+    if(!alloc || (pgtab = (pte_t*)kalloc()) == 0){
+      // !alloc is just to set mode where if we should be allocating or not
+      // alloc=0 means do not allocate
       return 0;
+    }
     // Make sure all those PTE_P bits are zero.
-    memset(pgtab, 0, PGSIZE);
+    // pgtab is pointer to the new Ptable
+    memset(pgtab, 0, PGSIZE); // Set all values of fresh Ptable to 0
     // The permissions here are overly generous, but they can
     // be further restricted by the permissions in the page table
     // entries, if necessary.
-    *pde = V2P(pgtab) | PTE_P | PTE_W | PTE_U;
+    // Set 20bit (PPN) and 12bit (perms) put into the corresponding Pdirectory entry
+    *pde = V2P(pgtab) | PTE_P | PTE_W | PTE_U; // Must save pgtab (virtual-adjusted PPN) as Physical adjusted ==> Save PPN
   }
-  return &pgtab[PTX(va)];
+  return &pgtab[PTX(va)]; // Returns (virtual adjusted PPN) address of PTable entry
 }
 
 // Create PTEs for virtual addresses starting at va that refer to
@@ -65,15 +80,19 @@ mappages(pde_t *pgdir, void *va, uint size, uint pa, int perm)
   char *a, *last;
   pte_t *pte;
 
-  a = (char*)PGROUNDDOWN((uint)va);
-  last = (char*)PGROUNDDOWN(((uint)va) + size - 1);
+  a = (char*)PGROUNDDOWN((uint)va); // round down va to 4096 bdy
+  last = (char*)PGROUNDDOWN(((uint)va) + size - 1); // round down to last bdy to be written into 
   for(;;){
-    if((pte = walkpgdir(pgdir, a, 1)) == 0)
+    if((pte = walkpgdir(pgdir, a, 1)) == 0){
+      // Check if 
       return -1;
-    if(*pte & PTE_P)
+    }
+    if(*pte & PTE_P){
+      // Check if va already has Present entry
       panic("remap");
-    *pte = pa | perm | PTE_P;
-    if(a == last)
+    }
+    *pte = pa | perm | PTE_P; // Ptable entry = PPN | (perms|Present)
+    if(a == last) // check if tracker is at last bdy that HAS been written
       break;
     a += PGSIZE;
     pa += PGSIZE;
@@ -115,6 +134,7 @@ static struct kmap {
  { (void*)data,     V2P(data),     PHYSTOP,   PTE_W}, // kern data+memory
  { (void*)DEVSPACE, DEVSPACE,      0,         PTE_W}, // more devices
 };
+// *virt,           phys_start,    phys_end,  perm
 
 // Set up kernel part of a page table.
 pde_t*
@@ -123,11 +143,15 @@ setupkvm(void)
   pde_t *pgdir;
   struct kmap *k;
 
-  if((pgdir = (pde_t*)kalloc()) == 0)
+  // Attempt to allocate 4KB; meant to be start of Pd
+  if((pgdir = (pde_t*)kalloc()) == 0){
     return 0;
-  memset(pgdir, 0, PGSIZE);
-  if (P2V(PHYSTOP) > (void*)DEVSPACE)
+  }
+  memset(pgdir, 0, PGSIZE); // Set all Pt entries to 0
+  if (P2V(PHYSTOP) > (void*)DEVSPACE){
     panic("PHYSTOP too high");
+  }
+  // For each obj in kmap[], attempt to map in all instance
   for(k = kmap; k < &kmap[NELEM(kmap)]; k++)
     if(mappages(pgdir, k->virt, k->phys_end - k->phys_start,
                 (uint)k->phys_start, k->perm) < 0) {
@@ -188,9 +212,10 @@ inituvm(pde_t *pgdir, char *init, uint sz)
 
   if(sz >= PGSIZE)
     panic("inituvm: more than a page");
-  mem = kalloc();
-  memset(mem, 0, PGSIZE);
-  mappages(pgdir, 0, PGSIZE, V2P(mem), PTE_W|PTE_U);
+  mem = kalloc(); // Allocate 4KB page, for Pd
+  // Mem is virtual addr for kernel to use
+  memset(mem, 0, PGSIZE); // Zero out page
+  mappages(pgdir, 0, PGSIZE, V2P(mem), PTE_W|PTE_U); // mem VA to PA
   memmove(mem, init, sz);
 }
 
@@ -266,15 +291,21 @@ deallocuvm(pde_t *pgdir, uint oldsz, uint newsz)
   a = PGROUNDUP(newsz);
   for(; a  < oldsz; a += PGSIZE){
     pte = walkpgdir(pgdir, (char*)a, 0);
-    if(!pte)
+    chgpgrefc(P2V((void*)(*pte)), -1);
+    if(!pte){
+      // If pte doesn't exist
       a = PGADDR(PDX(a) + 1, 0, 0) - PGSIZE;
+    }
     else if((*pte & PTE_P) != 0){
-      pa = PTE_ADDR(*pte);
-      if(pa == 0)
-        panic("kfree");
-      char *v = P2V(pa);
-      kfree(v);
-      *pte = 0;
+      // Pte exists and is not present for this Pd
+      if(getpgrefc(pte)==0){
+        pa = PTE_ADDR(*pte);
+        if(pa == 0)
+          panic("kfree");
+        char *v = P2V(pa);
+        kfree(v);
+        *pte = 0;
+      }
     }
   }
   return newsz;
@@ -322,20 +353,37 @@ copyuvm(pde_t *pgdir, uint sz)
   uint pa, i, flags;
   char *mem;
 
-  if((d = setupkvm()) == 0)
+  if((d = setupkvm()) == 0) // Setup kernel's Pdirectory
     return 0;
+  // Clone all of pgdir (Pdirectory), including even all
+  // of Ptable entry pointer's pointed data
   for(i = 0; i < sz; i += PGSIZE){
-    if((pte = walkpgdir(pgdir, (void *) i, 0)) == 0)
+    // i+=PGSIZE increments middle 10bits in VA argument
+    // aka will +1 the Ptable index
+    // aka Pdirect index=0 (stay at illusion pde_t[0])
+    // and at Ptable index=i/4096
+    if((pte = walkpgdir(pgdir, (void *) i, 0)) == 0){
+      // Check if pgdir exists (and don't allocate when nonexist)
       panic("copyuvm: pte should exist");
-    if(!(*pte & PTE_P))
+    }
+    if(!(*pte & PTE_P)){
       panic("copyuvm: page not present");
-    pa = PTE_ADDR(*pte);
-    flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
+    }
+    // pte is virtual, accessing pte is the physical address
+    pa = PTE_ADDR(*pte); // physical address, PPN of Ptentry
+    flags = PTE_FLAGS(*pte); // perms of entry
+    if((mem = kalloc()) == 0){
+      // Attempt to allocate 4KB of memory for pointed data
+      // that's being pointed by pa (Ptable's PPN)
       goto bad;
+    }
+    // Move pointed data into newly allocated 4KB
     memmove(mem, (char*)P2V(pa), PGSIZE);
-    if(mappages(d, (void*)i, PGSIZE, V2P(mem), flags) < 0)
+    // d: *pde, i: Pt index, mem: new 4KB addr ==> map mem copy
+    if(mappages(d, (void*)i, PGSIZE, V2P(mem), flags) < 0){
       goto bad;
+    }
+    chgpgrefc(mem, 1);
   }
   return d;
 
@@ -383,6 +431,35 @@ copyout(pde_t *pgdir, uint va, void *p, uint len)
     va = va0 + PGSIZE;
   }
   return 0;
+}
+
+void pgfaultintr(){
+  cprintf("pgfault\n");
+  struct proc *p=myproc();
+  if(p==0){
+    panic("pgfaultintr no proc on cpu");
+  }
+  // Check refcount: >1 then allocate new, =1 then give Write
+  uchar count=getpgrefc(p->pgdir);
+  if(count>1){
+    pde_t *oldpgdir=p->pgdir;
+    if((p->pgdir=copyuvm(p->pgdir, p->sz))==0){
+      // Copyuvm failure
+      cprintf("couldn't memory clone pagetable\n");
+      p->pgdir=oldpgdir;
+    }
+  }else if(count==1){
+    pte_t *pte;
+    for(int i=0; i<p->sz; i+=PGSIZE){
+      if((pte=walkpgdir(p->pgdir, (void*)i, 0))==0){
+        panic("pgfaultintr should exist pte but doesn't");
+      }
+      *pte|=PTE_W;
+      // May not need lcr3() since it is made less restrictive
+      // No need to adjust any refcount
+    }
+    lcr3(V2P(p->pgdir));
+  }
 }
 
 //PAGEBREAK!
