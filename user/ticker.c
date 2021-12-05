@@ -59,7 +59,7 @@ int main(){
                 // execute time
                 for(int i=0; i<ticks; i++){
                     for(int x=0; x<10; x++){
-                        printf(0, ""); // print nothing to console
+                        printf(1, ""); // print nothing to console
                     }
                 }
                 exit();
@@ -69,7 +69,7 @@ int main(){
             // see if it has a process and take 1 out
             if(r>3){
                 wait(&times);
-                printf(0, "real:%d  cpu:%d  wait:%d  sleep:%d", times.pt_real, times.pt_cpu, times.pt_wait, times.pt_sleep);
+                printf(1, "real:%d  cpu:%d  wait:%d  sleep:%d", times.pt_real, times.pt_cpu, times.pt_wait, times.pt_sleep);
                 r--;
             }
         }
@@ -83,7 +83,7 @@ int main(){
     // finalize leftover worker process
     while(r){
         wait(&times);
-        printf(0, "real:%d  cpu:%d  wait:%d  sleep:%d", times.pt_real, times.pt_cpu, times.pt_wait, times.pt_sleep);
+        printf(1, "real:%d  cpu:%d  wait:%d  sleep:%d", times.pt_real, times.pt_cpu, times.pt_wait, times.pt_sleep);
         r--;
     }
     exit();
@@ -93,16 +93,16 @@ int main(){
 previous worker code
 while(1){
         int coin=flipcoin() % 100;
-        printf(0, "after coin flip\n");
+        printf(1, "after coin flip\n");
         struct ptimes time={-1};
-        printf(0, "is it this struct\n");
+        printf(1, "is it this struct\n");
         if(r<6 && coin<(((6-r)*100)/6)%100){
-            printf(0, "after r\n");
-            printf(0, "after coin flip\n");
+            printf(1, "after r\n");
+            printf(1, "after coin flip\n");
             // will create a new process of there is enough space for a process creation
             n++;
             r++;
-            printf(0, "attempt to fork %p",&time);
+            printf(1, "attempt to fork %p",&time);
             if(fork()==0){
                 // Child
                 // roll for ticks
@@ -130,18 +130,18 @@ while(1){
             }
         }else{
             if(r){
-                // printf(0, "1address of struct %p",&time);
+                // printf(1, "1address of struct %p",&time);
                 int chldpid=wait(&time);
-                printf(0, "worker %d, age %d ticks, consumed %d CPU ticks, waited %d ticks, slept %d ticks", chldpid, time.pt_real, time.pt_cpu, time.pt_wait, time.pt_sleep);
+                printf(1, "worker %d, age %d ticks, consumed %d CPU ticks, waited %d ticks, slept %d ticks", chldpid, time.pt_real, time.pt_cpu, time.pt_wait, time.pt_sleep);
                 r--;
             }
         }
         if((t10*100/n)<=10){
             // stop making workers if we find have almost achieved 90% less than 10 tick
             while(r){
-                // printf(0, "2address of struct %p",&time);
+                // printf(1, "2address of struct %p",&time);
                 int chldpid=wait(&time);
-                printf(0, "worker %d, age %d ticks, consumed %d CPU ticks, waited %d ticks, slept %d ticks", chldpid, time.pt_real, time.pt_cpu, time.pt_wait, time.pt_sleep);
+                printf(1, "worker %d, age %d ticks, consumed %d CPU ticks, waited %d ticks, slept %d ticks", chldpid, time.pt_real, time.pt_cpu, time.pt_wait, time.pt_sleep);
                 r--;
             }
             break;

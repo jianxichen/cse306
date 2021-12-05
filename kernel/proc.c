@@ -20,6 +20,9 @@ int runnables=0; // runnables and loadavg updated every tick timer
 static struct proc *initproc;
 static int newproc=0; // new proc flag step 1 hw 3
 
+extern uint allocpages;
+extern int kallocpages;
+
 int nextpid = 1;
 extern void forkret(void);
 extern void trapret(void);
@@ -219,27 +222,13 @@ fork(void)
     return -1;
   }
 
-  // // Copy process state from proc.
-  // if((np->pgdir = copyuvm(curproc->pgdir, curproc->sz)) == 0){
-  //   kfree(np->kstack);
-  //   np->kstack = 0;
-  //   np->state = UNUSED;
-  //   return -1;
-  // }
-
-  // Reference copy of curproc's Pd
-  np->pgdir=curproc->pgdir;
-  // Iterate all encompassing Pt entries in Pdirectory
-  pte_t *pte;
-  for(int i=0; i<curproc->sz; i+=PGSIZE){
-    if((pte=walkpgdir(curproc->pgdir, (void*)i, 0))==0){
-      panic("forklazy should exist pte but doesn't");
-    }
-    *pte&=~PTE_W;
-    // get PPN in pte
-    chgpgrefc(P2V((void*)(*pte)), 1);
-  }
-  lcr3(V2P(curproc->pgdir));
+  // Copy process state from proc.
+  if((np->pgdir = copyuvm(curproc->pgdir, curproc->sz, 0)) == 0){
+    kfree(np->kstack);
+    np->kstack = 0;
+    np->state = UNUSED;
+    return -1;
+  }//changed ppn 57138 by dif 1 resulting 1
 
   np->sz = curproc->sz;
   np->parent = curproc;
@@ -463,54 +452,55 @@ sched(void)
   // Roundrobin on kernel-mode process first hw 3 step 6
   // pretty sure there exists a flag/register to see if CPU is in kernel-mode
   // or not but forgot/unsure of what it is
-  intena=0; // intena used as "found kernel-mode process" flag
-  for(int i = 0; i < NPROC; i++) {
-    p = &(ptable.proc[i]);
-    if((p->state) != RUNNABLE || (p->kernelmode==0)){
-      continue;
+  // intena=0; // intena used as "found kernel-mode process" flag
+  // for(int i = 0; i < NPROC; i++) {
+  //   p = &(ptable.proc[i]);
+  //   if((p->state) != RUNNABLE || (p->kernelmode==0)){
+  //     continue;
+  //   }
+  //   if(intena==0){
+  //     adjustallpticks(p - ptable.proc); // hw 3 step 2|6 : adjust ticks
+  //     intena=1;
+  //     break;
+  //   }
+  // }
+  // if(intena){ // hw 3 step 6 : choose first kernel-mode process over user
+  //   // Switch to chosen process.  It is the process's job
+  //   // to release ptable.lock and then reacquire it
+  //   // before jumping back to us.
+  //   p->state = RUNNING;
+  //   switchuvm(p);
+  //   if(c->proc != p) {
+  //     c->proc = p;
+  //     intena = c->intena;
+  //     swtch(oldcontext, p->context);
+  //     mycpu()->intena = intena;  // We might return on a different CPU.
+  //   }
+  // }else {
+    // Choose next process to run.
+    if((p = policy[POLICY]()) != 0) {
+      // Switch to chosen process.  It is the process's job
+      // to release ptable.lock and then reacquire it
+      // before jumping back to us.
+      p->state = RUNNING;
+      switchuvm(p);
+      if(c->proc != p) {
+        c->proc = p;
+        intena = c->intena;
+        swtch(oldcontext, p->context);
+        mycpu()->intena = intena;  // We might return on a different CPU.
+      }
+    } else {
+      // No process to run -- switch to the idle loop.
+      switchkvm();
+      if(oldcontext != &(c->scheduler)) {
+        c->proc = 0;
+        intena = c->intena;
+        swtch(oldcontext, c->scheduler);
+        mycpu()->intena = intena;
+      }
     }
-    if(intena==0){
-      adjustallpticks(p - ptable.proc); // hw 3 step 2|6 : adjust ticks
-      intena=1;
-      break;
-    }
-  }
-  if(intena){ // hw 3 step 6 : choose first kernel-mode process over user
-    // Switch to chosen process.  It is the process's job
-    // to release ptable.lock and then reacquire it
-    // before jumping back to us.
-    p->state = RUNNING;
-    switchuvm(p);
-    if(c->proc != p) {
-      c->proc = p;
-      intena = c->intena;
-      swtch(oldcontext, p->context);
-      mycpu()->intena = intena;  // We might return on a different CPU.
-    }
-  }else 
-  // Choose next process to run.
-  if((p = policy[POLICY]()) != 0) {
-    // Switch to chosen process.  It is the process's job
-    // to release ptable.lock and then reacquire it
-    // before jumping back to us.
-    p->state = RUNNING;
-    switchuvm(p);
-    if(c->proc != p) {
-      c->proc = p;
-      intena = c->intena;
-      swtch(oldcontext, p->context);
-      mycpu()->intena = intena;  // We might return on a different CPU.
-    }
-  } else {
-    // No process to run -- switch to the idle loop.
-    switchkvm();
-    if(oldcontext != &(c->scheduler)) {
-      c->proc = 0;
-      intena = c->intena;
-      swtch(oldcontext, c->scheduler);
-      mycpu()->intena = intena;
-    }
-  }
+  // }
 }
 
 // Round-robin scheduler.
@@ -807,7 +797,11 @@ procdump(void)
   int i;
   struct proc *p;
   char *state;
-  uint pc[10];
+  // uint pc[10]; // Used to print callstack of SLEEPING procs
+
+  // For proc paging info
+  cprintf("Tot. Mem. Pages (only ptes are noted in coremap/array):\n %d, Pte entries used: %d, Pages free: %d\n",
+      PHYSTOP>>12, allocpages, (PHYSTOP>>12)-kallocpages);
 
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
     if(p->state == UNUSED)
@@ -817,18 +811,47 @@ procdump(void)
     else
       state = "???";
 
-    // For CPU tick info & call-stack printing
-    cprintf("%d %s %s; real:%d cpu:%d wait:%d sleep:%d", 
-        p->pid, state, p->name, p->tick.pt_real, 
-        p->tick.pt_cpu, p->tick.pt_wait, p->tick.pt_sleep);
-    if(p->state == SLEEPING){
-      getcallerpcs((uint*)p->context->ebp+2, pc);
-      for(i=0; i<10 && pc[i] != 0; i++)
-        cprintf(" %p", pc[i]);
-    }
+    // // For CPU tick info & call-stack printing
+    // cprintf("%d %s %s; real:%d cpu:%d wait:%d sleep:%d", 
+    //     p->pid, state, p->name, p->tick.pt_real, 
+    //     p->tick.pt_cpu, p->tick.pt_wait, p->tick.pt_sleep);
+    // if(p->state == SLEEPING){
+    //   getcallerpcs((uint*)p->context->ebp+2, pc);
+    //   for(i=0; i<10 && pc[i] != 0; i++)
+    //     cprintf(" %p", pc[i]);
+    // }
 
-    // For CPU mem page info and kernel stack
-    // cprintf("%d %s %s");
+    // For proc paging info
+    // Put all used Ptes in array of pte
+    // Also added explicit check to ensure PTEs are accurate; check "coremap"
+    pte_t *ptes[p->sz>>12];
+    pte_t *pte;
+    uint sum=0; // total # of Pt for proc
+    uint shared=0; // total shared # Pt for proc
+    for(i=0; i<p->sz; i+=PGSIZE){
+      if((pte=walkpgdir(p->pgdir, (void*)i, 0))==0){
+        panic("procdump: pte should exists");
+      }
+      ptes[i>>12]=pte;
+      uint pa=PTE_ADDR(*pte);
+      uchar count=getpgrefc(P2V(pa));
+      if(count>1){
+        shared++;
+        sum++;
+      }else if(count==1){
+        sum++;
+      }else if(count==0){
+        panic("procdump: pte has 0 ref?");
+      }
+    }
+    cprintf("%d %s %s [using Pt %d / shared Pt %d] -- ", 
+        p->pid, state, p->name, sum, shared);
+    uint pa;
+    for(i=0; i<p->sz; i+=PGSIZE){
+      pa=PTE_ADDR(*(ptes[i>>12]));
+      cprintf("\n0x%x", P2V(pa));
+      pa=getpgrefc(P2V(pa));
+    }
     cprintf("\n");
   }
   // step 2 hw3 done (only need a way to calculate loadavg, for another part)
@@ -836,6 +859,15 @@ procdump(void)
   // cprintf("uptime:%d runnables:%d ", ticks, runnables); // create on modifier to print load avg
   // cprintf("loadavg:%d", (loadavg/100)%100); // before dec
   // cprintf(".%d%d%\n", loadavg/10%10, loadavg%10); // after dec
+  
+  // Explicit check to ensure PTEs are accurate; check "coremap"
+  uint allocs=0;
+  for(i=0; i<PHYSTOP; i+=PGSIZE){
+    if(getpgrefc(P2V(i))){
+      allocs++;
+    }
+  }
+  cprintf("sanity: according to coremap array, %d Ptes w/ refs\n", allocs);
 }
 
 void kforkret(void (*func)(void)){

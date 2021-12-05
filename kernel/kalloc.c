@@ -26,6 +26,8 @@ struct {
 // There exists max (PHYSTOP)>>12 PPNs to use, indexed by PPN
 unsigned char pgrefcounter[PHYSTOP>>12]; // Refcnt for Pt entry
 struct spinlock pgreflock; // Lock pgrefcounter
+uint allocpages; // Total number of tracked Pt entries
+int kallocpages; // Total number of Pages alloced
 
 // Initialization happens in two phases.
 // 1. main() calls kinit1() while still using entrypgdir to place just
@@ -57,7 +59,7 @@ freerange(void *vstart, void *vend)
     kfree(p);
 }
 //PAGEBREAK: 21
-// Free the page of physical memory pointed at by v,
+// Free the page of physical memory pointed at by virt. addr,
 // which normally should have been returned by a
 // call to kalloc().  (The exception is when
 // initializing the allocator; see kinit above.)
@@ -72,13 +74,16 @@ kfree(char *v)
   // Fill with junk to catch dangling refs.
   memset(v, 1, PGSIZE);
 
-  if(kmem.use_lock)
+  if(kmem.use_lock){
     acquire(&kmem.lock);
+  }
   r = (struct run*)v;
   r->next = kmem.freelist;
   kmem.freelist = r;
-  if(kmem.use_lock)
+  if(kmem.use_lock){
+    kallocpages--;
     release(&kmem.lock);
+  }
 }
 
 // Allocate one 4096-byte page of physical memory.
@@ -100,6 +105,7 @@ kalloc(void)
     kmem.freelist = r->next;
   }
   if(kmem.use_lock){
+    kallocpages++;
     release(&kmem.lock);
   }
   return (char*)r;
@@ -112,8 +118,9 @@ void chgpgrefc(void *va, uint dif){
     unsigned int ppn=((uint)va - KERNBASE)>>12;
     acquire(&pgreflock);
     pgrefcounter[ppn]+=dif;
-    // cprintf("changing ppn 0x%x by %d\n", ppn, dif);
     release(&pgreflock);
+    // cprintf("changed ppn %d by dif %d resulting %d\n",
+        // ppn, dif, pgrefcounter[ppn]);
   }
 }
 

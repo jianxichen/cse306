@@ -14,6 +14,7 @@ pde_t *kpgdir;  // for use in scheduler()
 
 extern unsigned int pgrefcounter[];
 extern struct spinlock pgreflock;
+extern uint allocpages;
 
 // Set up CPU's kernel segment descriptors.
 // Run once on entry on each CPU.
@@ -259,6 +260,8 @@ allocuvm(pde_t *pgdir, uint oldsz, uint newsz)
   a = PGROUNDUP(oldsz);
   for(; a < newsz; a += PGSIZE){
     mem = kalloc();
+    // cprintf("allocuvm: increment allocp\n");
+    allocpages++;
     if(mem == 0){
       cprintf("allocuvm out of memory\n");
       deallocuvm(pgdir, newsz, oldsz);
@@ -271,6 +274,7 @@ allocuvm(pde_t *pgdir, uint oldsz, uint newsz)
       kfree(mem);
       return 0;
     }
+    chgpgrefc(mem, 1);
   }
   return newsz;
 }
@@ -289,21 +293,40 @@ deallocuvm(pde_t *pgdir, uint oldsz, uint newsz)
     return oldsz;
 
   a = PGROUNDUP(newsz);
+  // cprintf("dealloc\n");
   for(; a  < oldsz; a += PGSIZE){
     pte = walkpgdir(pgdir, (char*)a, 0);
-    chgpgrefc(P2V((void*)(*pte)), -1);
     if(!pte){
       // If pte doesn't exist
       a = PGADDR(PDX(a) + 1, 0, 0) - PGSIZE;
     }
     else if((*pte & PTE_P) != 0){
-      // Pte exists and is not present for this Pd
-      if(getpgrefc(pte)==0){
-        pa = PTE_ADDR(*pte);
-        if(pa == 0)
+      char originkern=0;
+      // Ptentry exists and is not present for this Pd
+      if(getpgrefc(P2V((void*)(*pte)))){
+        // Decrement if its still >0
+        // Else it will be removed 
+        // (edge case for when refcount already 0)
+        chgpgrefc(P2V((void*)(*pte)), -1);
+      }else{
+        // somehow pgref is already 0 but we're here
+        // must be case it was creating for initboot or 
+        // kernel bootup use(??) do not decre allocpages
+        // when case comes to show
+        originkern=1;
+      }
+      if(getpgrefc(P2V((void*)(*pte)))==0){
+        pa = PTE_ADDR(*pte); // get pa (PPN) of Pte
+        // cprintf("deallocuvm: deallocing pte ppn %d\n", pa>>12);
+        if(pa == 0){
           panic("kfree");
-        char *v = P2V(pa);
-        kfree(v);
+        }
+        char *v = P2V(pa); // Convert pa PPN into va for kern
+        kfree(v); // Free that 4KB pointed by PPN
+        if(!originkern){
+          allocpages--;
+          // cprintf("deallocuvm: decrement allocp\n");
+        }
         *pte = 0;
       }
     }
@@ -318,10 +341,12 @@ freevm(pde_t *pgdir)
 {
   uint i;
 
-  if(pgdir == 0)
+  if(pgdir == 0){
     panic("freevm: no pgdir");
+  }
   deallocuvm(pgdir, KERNBASE, 0);
   for(i = 0; i < NPDENTRIES; i++){
+    // For every Pd entry, free the contents (the whole Pt)
     if(pgdir[i] & PTE_P){
       char * v = P2V(PTE_ADDR(pgdir[i]));
       kfree(v);
@@ -345,45 +370,78 @@ clearpteu(pde_t *pgdir, char *uva)
 
 // Given a parent process's page table, create a copy
 // of it for a child.
+// Will be used to provide a deep clone or ref clone
 pde_t*
-copyuvm(pde_t *pgdir, uint sz)
+copyuvm(pde_t *pgdir, uint sz, char deep)
 {
   pde_t *d;
   pte_t *pte;
   uint pa, i, flags;
   char *mem;
-
-  if((d = setupkvm()) == 0) // Setup kernel's Pdirectory
-    return 0;
-  // Clone all of pgdir (Pdirectory), including even all
-  // of Ptable entry pointer's pointed data
-  for(i = 0; i < sz; i += PGSIZE){
-    // i+=PGSIZE increments middle 10bits in VA argument
-    // aka will +1 the Ptable index
-    // aka Pdirect index=0 (stay at illusion pde_t[0])
-    // and at Ptable index=i/4096
-    if((pte = walkpgdir(pgdir, (void *) i, 0)) == 0){
-      // Check if pgdir exists (and don't allocate when nonexist)
-      panic("copyuvm: pte should exist");
+  if(deep){
+    if((d = setupkvm()) == 0) // Setup kernel's Pdirectory
+      return 0;
+    // Clone all of pgdir (Pdirectory), including even all
+    // of Ptable entry pointer's pointed data
+    // cprintf("copyuvm: deep\n");
+    for(i = 0; i < sz; i += PGSIZE){
+      // i+=PGSIZE increments middle 10bits in VA argument
+      // aka will +1 the Ptable index
+      // aka Pdirect index=0 (stay at illusion pde_t[0])
+      // and at Ptable index=i/4096
+      if((pte = walkpgdir(pgdir, (void *) i, 0)) == 0){
+        // Check if pgdir exists (and don't allocate when nonexist)
+        panic("copyuvm: pte should exist");
+      }
+      if(!(*pte & PTE_P)){
+        panic("copyuvm: page not present");
+      }
+      // pte is virtual, accessing pte is the physical address
+      pa = PTE_ADDR(*pte); // physical address, PPN of Ptentry
+      flags = PTE_FLAGS(*pte) | PTE_W; // perms of entry
+      if((mem = kalloc()) == 0){
+        // Attempt to allocate 4KB of memory for pointed data
+        // that's being pointed by pa (Ptable's PPN)
+        goto bad;
+      }
+      // Move pointed data into newly allocated 4KB
+      memmove(mem, (char*)P2V(pa), PGSIZE);
+      // d: *pde, i: Pt index, mem: new 4KB addr ==> map mem copy
+      if(mappages(d, (void*)i, PGSIZE, V2P(mem), flags) < 0){
+        goto bad;
+      }
+      // cprintf("putting ppn %d into ppn %d\n", pa>>12, V2P(mem)>>12);
+      // incr new Pte ref, decr the old Pte ref
+      chgpgrefc(mem, 1);
+      // cprintf("copyuvm: deep, increment allocp\n");
+      allocpages++;
+      // chgpgrefc(P2V(pa), -1); // decrement in dealloc instead
+      // // Perhaps only 1 Pte has no ref but other has ref
+      // // Just free that single Pte ==> may imply others will not have ref either
+      // // Count number of Ptes to size, if equal then free pgdir instead
+      // if(getpgrefc(P2V(pa))==0){
+      //   cprintf("found refcount=0 pte, freeing it\n");
+      //   *pte&=~PTE_P;
+      //   kfree(P2V(pa));
+      //   cprintf("copyuvm: deep, decrement allocp\n");
+      //   allocpages--;
+      // }
     }
-    if(!(*pte & PTE_P)){
-      panic("copyuvm: page not present");
+  }else{
+    // Reference copy
+    d=pgdir;
+    for(int i=0; i<sz; i+=PGSIZE){
+      if((pte=walkpgdir(pgdir, (void*)i, 0))==0){
+        panic("copyuvm: lite, pte should exist");
+      }
+      if(!(*pte&PTE_P)){
+        panic("copuvm: lite page not present");
+      }
+      pa=PTE_ADDR(*pte);
+      *pte&=~PTE_W;
+      chgpgrefc(P2V(pa), 1);
     }
-    // pte is virtual, accessing pte is the physical address
-    pa = PTE_ADDR(*pte); // physical address, PPN of Ptentry
-    flags = PTE_FLAGS(*pte); // perms of entry
-    if((mem = kalloc()) == 0){
-      // Attempt to allocate 4KB of memory for pointed data
-      // that's being pointed by pa (Ptable's PPN)
-      goto bad;
-    }
-    // Move pointed data into newly allocated 4KB
-    memmove(mem, (char*)P2V(pa), PGSIZE);
-    // d: *pde, i: Pt index, mem: new 4KB addr ==> map mem copy
-    if(mappages(d, (void*)i, PGSIZE, V2P(mem), flags) < 0){
-      goto bad;
-    }
-    chgpgrefc(mem, 1);
+    lcr3(V2P(pgdir));
   }
   return d;
 
@@ -434,32 +492,19 @@ copyout(pde_t *pgdir, uint va, void *p, uint len)
 }
 
 void pgfaultintr(){
-  cprintf("pgfault\n");
+  // cprintf("pgfault start\n");
   struct proc *p=myproc();
   if(p==0){
     panic("pgfaultintr no proc on cpu");
   }
-  // Check refcount: >1 then allocate new, =1 then give Write
-  uchar count=getpgrefc(p->pgdir);
-  if(count>1){
-    pde_t *oldpgdir=p->pgdir;
-    if((p->pgdir=copyuvm(p->pgdir, p->sz))==0){
-      // Copyuvm failure
-      cprintf("couldn't memory clone pagetable\n");
-      p->pgdir=oldpgdir;
-    }
-  }else if(count==1){
-    pte_t *pte;
-    for(int i=0; i<p->sz; i+=PGSIZE){
-      if((pte=walkpgdir(p->pgdir, (void*)i, 0))==0){
-        panic("pgfaultintr should exist pte but doesn't");
-      }
-      *pte|=PTE_W;
-      // May not need lcr3() since it is made less restrictive
-      // No need to adjust any refcount
-    }
-    lcr3(V2P(p->pgdir));
+  // Only purpose of pgfault is to mem clone entire pgdir
+  pde_t *oldpgdir=p->pgdir;
+  if((p->pgdir=copyuvm(p->pgdir, p->sz, 1))==0){
+    p->pgdir=oldpgdir;
+    cprintf("failed to mem clone pgdir");
   }
+  deallocuvm(oldpgdir, KERNBASE, 0);
+  // cprintf("pgfault end\n");
 }
 
 //PAGEBREAK!

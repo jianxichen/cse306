@@ -24,7 +24,8 @@ UPROGS=\
 	_zombie\
 	_ml\
 	_sigdummy\
-	_ticker
+	_ticker\
+	_pagetest
 
 fs.img: mkfs README $(UPROGS)
 	./mkfs fs.img README $(UPROGS)
